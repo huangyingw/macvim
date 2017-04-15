@@ -8,6 +8,6 @@ cd src/
     && make \
     && cd - \
     && ~/loadrc/gitrc/gci.sh \
-    && ln -fs ./src/MacVim/mvim /usr/local/bin/vim
+    && ln -fs "$SCRIPTPATH"/src/MacVim/mvim /usr/local/bin/vim
 
 cd -
