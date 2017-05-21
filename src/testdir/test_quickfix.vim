@@ -1201,6 +1201,25 @@ func SetXlistTests(cchar, bnum)
   let l = g:Xgetlist()
   call assert_equal(0, len(l))
 
+  " Tests for setting the 'valid' flag
+  call g:Xsetlist([{'bufnr':a:bnum, 'lnum':4, 'valid':0}])
+  Xwindow
+  call assert_equal(1, winnr('$'))
+  let l = g:Xgetlist()
+  call g:Xsetlist(l)
+  call assert_equal(0, g:Xgetlist()[0].valid)
+  call g:Xsetlist([{'text':'Text1', 'valid':1}])
+  Xwindow
+  call assert_equal(2, winnr('$'))
+  Xclose
+  let save_efm = &efm
+  set efm=%m
+  Xgetexpr 'TestMessage'
+  let l = g:Xgetlist()
+  call g:Xsetlist(l)
+  call assert_equal(1, g:Xgetlist()[0].valid)
+  let &efm = save_efm
+
   " Error cases:
   " Refer to a non-existing buffer and pass a non-dictionary type
   call assert_fails("call g:Xsetlist([{'bufnr':998, 'lnum':4}," .
@@ -1753,6 +1772,38 @@ func Xproperty_tests(cchar)
     if a:cchar == 'l'
 	call assert_equal({}, getloclist(99, {'title': 1}))
     endif
+
+    " Context related tests
+    call g:Xsetlist([], 'a', {'context':[1,2,3]})
+    call test_garbagecollect_now()
+    let d = g:Xgetlist({'context':1})
+    call assert_equal([1,2,3], d.context)
+    call g:Xsetlist([], 'a', {'context':{'color':'green'}})
+    let d = g:Xgetlist({'context':1})
+    call assert_equal({'color':'green'}, d.context)
+    call g:Xsetlist([], 'a', {'context':"Context info"})
+    let d = g:Xgetlist({'context':1})
+    call assert_equal("Context info", d.context)
+    call g:Xsetlist([], 'a', {'context':246})
+    let d = g:Xgetlist({'context':1})
+    call assert_equal(246, d.context)
+    if a:cchar == 'l'
+	" Test for copying context across two different location lists
+	new | only
+	let w1_id = win_getid()
+	let l = [1]
+	call setloclist(0, [], 'a', {'context':l})
+	new
+	let w2_id = win_getid()
+	call add(l, 2)
+	call assert_equal([1, 2], getloclist(w1_id, {'context':1}).context)
+	call assert_equal([1, 2], getloclist(w2_id, {'context':1}).context)
+	unlet! l
+	call assert_equal([1, 2], getloclist(w2_id, {'context':1}).context)
+	only
+	call setloclist(0, [], 'f')
+	call assert_equal({}, getloclist(0, {'context':1}))
+    endif
 endfunc
 
 func Test_qf_property()
@@ -2021,16 +2072,4 @@ endfunc
 func Test_qf_free()
   call XfreeTests('c')
   call XfreeTests('l')
-endfunc
-
-func Test_no_reuse_mem()
-  set efm=E,%W%m,
-  cgetexpr ['C']
-  set efm=%C%m
-  lexpr '0'
-  lopen
-  call setqflist([], 'r')
-  caddbuf
-
-  set efm&
 endfunc
