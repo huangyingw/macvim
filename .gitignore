@@ -134,3 +134,5 @@ src/tags
 src/xxd/xxd
 src/xxd/xxd.dSYM
 src/a.out.dSYM
+
+files.proj

@@ -2464,7 +2464,8 @@ win_close(win_T *win, int free_buf)
 	check_cursor();
     }
     if (p_ea && (*p_ead == 'b' || *p_ead == dir))
-	win_equal(curwin, TRUE, dir);
+	//win_equal(curwin, TRUE, dir);
+	curwin = curwin;
     else
 	win_comp_pos();
     if (close_curwin)
