@@ -1500,7 +1500,7 @@ getcmdline(
 			    if (c != NUL)
 			    {
 				if (c == firstc || vim_strchr((char_u *)(
-					      p_magic ? "\\^$.*[" : "\\^$"), c)
+					      p_magic ? "\\~^$.*[" : "\\^$"), c)
 								       != NULL)
 				{
 				    /* put a backslash before special
@@ -1715,6 +1715,14 @@ getcmdline(
 			     * put back on the match */
 			    search_start = t;
 			    (void)decl(&search_start);
+			}
+			else if (c == Ctrl_G && firstc == '?')
+			{
+			    /* move just after the current match, so that
+			     * when nv_search finishes the cursor will be
+			     * put back on the match */
+			    search_start = t;
+			    (void)incl(&search_start);
 			}
 			if (LT_POS(t, search_start) && c == Ctrl_G)
 			{
