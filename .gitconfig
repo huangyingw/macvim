@@ -1,0 +1,8 @@
+[remote "macvim-dev"]
+    url = git@github.com:macvim-dev/macvim.git
+    fetch = +refs/heads/*:refs/remotes/macvim-dev/*
+[push]
+    remote = origin
+[gsync]
+    remote = macvim-dev
+    branch = master
