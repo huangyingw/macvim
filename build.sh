@@ -9,6 +9,6 @@ xcode-select --install \
     ; brew reinstall python --framework \
     && ./configure --with-features=huge --enable-multibyte --with-macarchs=x86_64 --enable-perlinterp --enable-rubyinterp --enable-tclinterp --with-tlib=ncurses --with-local-dir=/usr/local --enable-cscope --enable-pythoninterp \
     && make \
-    && make install \
     && cd - \
-    && ~/loadrc/gitrc/gci.sh
+    && ~/loadrc/gitrc/gci.sh \
+    && cp -fv ./src/MacVim/build/Release/MacVim.app/Contents/MacOS/Vim /usr/local/bin/vim
