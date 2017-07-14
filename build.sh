@@ -11,4 +11,6 @@ xcode-select --install \
     && make \
     && cd - \
     && ~/loadrc/gitrc/gci.sh \
-    && cp -fv ./src/MacVim/build/Release/MacVim.app/Contents/MacOS/Vim /usr/local/bin/vim
+    && ln -fs "$SCRIPTPATH"/src/MacVim/mvim /usr/local/bin/vim
+
+cd -
