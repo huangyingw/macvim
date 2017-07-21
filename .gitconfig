@@ -1,8 +1,12 @@
 [remote "bitbucket"]
-	url = git@bitbucket.org:huangyingw/macvim.git
-	fetch = +refs/heads/*:refs/remotes/bitbucket/*
+    url = git@bitbucket.org:huangyingw/macvim.git
+    fetch = +refs/heads/*:refs/remotes/bitbucket/*
+[remote "github"]
+    url = git@github.com:huangyingw/macvim.git
+    fetch = +refs/heads/*:refs/remotes/github/*
 [push]
     remote = bitbucket
+    remote = github
 [gsync]
     remote = origin
     branch = master
