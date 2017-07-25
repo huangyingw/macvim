@@ -36,6 +36,8 @@
 #	  is yes)
 #	Global IME support: GIME=yes (requires GUI=yes)
 #
+#       Terminal support: TERMINAL=yes (default is no)
+#
 #	Lua interface:
 #	  LUA=[Path to Lua directory]
 #	  DYNAMIC_LUA=yes (to load the Lua DLL dynamically)
@@ -351,6 +353,16 @@ CSCOPE_OBJ   = $(OBJDIR)/if_cscope.obj
 CSCOPE_DEFS  = -DFEAT_CSCOPE
 !endif
 
+!if "$(TERMINAL)" == "yes"
+TERMINAL_OBJ   = $(OBJDIR)/terminal.obj
+TERMINAL_DEFS  = -DFEAT_TERMINAL
+!if $(MSVC_MAJOR) <= 11
+TERMINAL_DEFS = $(TERMINAL_DEFS) /I if_perl_msvc
+!endif
+TERMINAL_SRC   = terminal.c
+VTERM_LIB      = libvterm/vterm.lib
+!endif
+
 !ifndef NETBEANS
 NETBEANS = $(GUI)
 !endif
@@ -458,7 +470,7 @@ WINVER = 0x0501
 #VIMRUNTIMEDIR = somewhere
 
 CFLAGS = -c /W3 /nologo $(CVARS) -I. -Iproto -DHAVE_PATHDEF -DWIN32 \
-		$(CSCOPE_DEFS) $(NETBEANS_DEFS) $(CHANNEL_DEFS) \
+		$(CSCOPE_DEFS) $(TERMINAL_DEFS) $(NETBEANS_DEFS) $(CHANNEL_DEFS) \
 		$(NBDEBUG_DEFS) $(XPM_DEFS) \
 		$(DEFINES) -DWINVER=$(WINVER) -D_WIN32_WINNT=$(WINVER) \
 		/Fo$(OUTDIR)/ 
@@ -1124,7 +1136,7 @@ conflags = $(conflags) /map /mapinfo:lines
 LINKARGS1 = $(linkdebug) $(conflags)
 LINKARGS2 = $(CON_LIB) $(GUI_LIB) $(NODEFAULTLIB) $(LIBC) $(OLE_LIB) user32.lib \
 		$(LUA_LIB) $(MZSCHEME_LIB) $(PERL_LIB) $(PYTHON_LIB) $(PYTHON3_LIB) $(RUBY_LIB) \
-		$(TCL_LIB) $(NETBEANS_LIB) $(XPM_LIB) $(LINK_PDB)
+		$(TCL_LIB) $(NETBEANS_LIB) $(VTERM_LIB) $(XPM_LIB) $(LINK_PDB)
 
 # Report link time code generation progress if used. 
 !ifdef NODEBUG
@@ -1145,12 +1157,12 @@ all:	$(VIM).exe \
 
 $(VIM).exe: $(OUTDIR) $(OBJ) $(GUI_OBJ) $(CUI_OBJ) $(OLE_OBJ) $(OLE_IDL) $(MZSCHEME_OBJ) \
 		$(LUA_OBJ) $(PERL_OBJ) $(PYTHON_OBJ) $(PYTHON3_OBJ) $(RUBY_OBJ) $(TCL_OBJ) \
-		$(CSCOPE_OBJ) $(NETBEANS_OBJ) $(CHANNEL_OBJ) $(XPM_OBJ) \
+		$(CSCOPE_OBJ) $(TERMINAL_OBJ) $(NETBEANS_OBJ) $(CHANNEL_OBJ) $(XPM_OBJ) $(VTERM_LIB) \
 		version.c version.h
 	$(CC) $(CFLAGS) version.c
 	$(link) $(LINKARGS1) -out:$(VIM).exe $(OBJ) $(GUI_OBJ) $(CUI_OBJ) $(OLE_OBJ) \
 		$(LUA_OBJ) $(MZSCHEME_OBJ) $(PERL_OBJ) $(PYTHON_OBJ) $(PYTHON3_OBJ) $(RUBY_OBJ) \
-		$(TCL_OBJ) $(CSCOPE_OBJ) $(NETBEANS_OBJ) $(CHANNEL_OBJ) \
+		$(TCL_OBJ) $(CSCOPE_OBJ) $(TERMINAL_OBJ) $(NETBEANS_OBJ) $(CHANNEL_OBJ) \
 		$(XPM_OBJ) $(OUTDIR)\version.obj $(LINKARGS2)
 	if exist $(VIM).exe.manifest mt.exe -nologo -manifest $(VIM).exe.manifest -updateresource:$(VIM).exe;1
 
@@ -1384,6 +1396,8 @@ $(OUTDIR)/ops.obj:	$(OUTDIR) ops.c  $(INCL)
 
 $(OUTDIR)/os_mswin.obj:	$(OUTDIR) os_mswin.c  $(INCL)
 
+$(OUTDIR)/terminal.obj:	$(OUTDIR) terminal.c  $(INCL)
+
 $(OUTDIR)/winclip.obj:	$(OUTDIR) winclip.c  $(INCL)
 
 $(OUTDIR)/os_win32.obj:	$(OUTDIR) os_win32.c  $(INCL) os_win32.h
@@ -1536,5 +1550,9 @@ proto.h: \
 .c.i:
 	$(CC) $(CFLAGS) /P /C $<
 
+libvterm/vterm.lib :
+	cd libvterm
+	$(MAKE) /NOLOGO -f Makefile.msc "MSVC_MAJOR=$(MSVC_MAJOR)"
+	cd ..
 
 # vim: set noet sw=8 ts=8 sts=0 wm=0 tw=0:

@@ -468,7 +468,6 @@ close_buffer(
     int		del_buf = (action == DOBUF_DEL || action == DOBUF_WIPE);
     int		wipe_buf = (action == DOBUF_WIPE);
 
-#ifdef FEAT_QUICKFIX
     /*
      * Force unloading or deleting when 'bufhidden' says so.
      * The caller must take care of NOT deleting/freeing when 'bufhidden' is
@@ -487,7 +486,6 @@ close_buffer(
     }
     else if (buf->b_p_bh[0] == 'u')	/* 'bufhidden' == "unload" */
 	unload_buf = TRUE;
-#endif
 
 #ifdef FEAT_AUTOCMD
     /* Disallow deleting the buffer when it is locked (already being closed or
@@ -862,6 +860,9 @@ free_buffer(buf_T *buf)
 #endif
 #ifdef FEAT_JOB_CHANNEL
     channel_buffer_free(buf);
+#endif
+#ifdef FEAT_TERMINAL
+    free_terminal(buf->b_term);
 #endif
 
     buf_hashtab_remove(buf);
@@ -1775,7 +1776,7 @@ enter_buffer(buf_T *buf)
 #endif
 
 #ifdef FEAT_SYN_HL
-    curwin->w_s = &(buf->b_s);
+    curwin->w_s = &(curbuf->b_s);
 #endif
 
     /* Cursor on first line by default. */
@@ -1983,16 +1984,14 @@ buflist_new(
 	    return NULL;
 # endif
 #endif
-#ifdef FEAT_QUICKFIX
-# ifdef FEAT_AUTOCMD
+#ifdef FEAT_AUTOCMD
 	if (buf == curbuf)
-# endif
+#endif
 	{
 	    /* Make sure 'bufhidden' and 'buftype' are empty */
 	    clear_string_option(&buf->b_p_bh);
 	    clear_string_option(&buf->b_p_bt);
 	}
-#endif
     }
     if (buf != curbuf || curbuf == NULL)
     {
@@ -2166,10 +2165,8 @@ free_buf_options(
 	clear_string_option(&buf->b_p_fenc);
 #endif
 	clear_string_option(&buf->b_p_ff);
-#ifdef FEAT_QUICKFIX
 	clear_string_option(&buf->b_p_bh);
 	clear_string_option(&buf->b_p_bt);
-#endif
     }
 #ifdef FEAT_FIND_ID
     clear_string_option(&buf->b_p_def);
@@ -3637,6 +3634,13 @@ maketitle(void)
 #define SPACE_FOR_ARGNR (IOSIZE - 10)  /* at least room for " - VIM" */
 	    if (curbuf->b_fname == NULL)
 		vim_strncpy(buf, (char_u *)_("[No Name]"), SPACE_FOR_FNAME);
+#ifdef FEAT_TERMINAL
+	    else if (curbuf->b_term != NULL)
+	    {
+		vim_strncpy(buf, term_get_status_text(curbuf->b_term),
+							      SPACE_FOR_FNAME);
+	    }
+#endif
 	    else
 	    {
 		p = transstr(gettail(curbuf->b_fname));
@@ -3644,20 +3648,27 @@ maketitle(void)
 		vim_free(p);
 	    }
 
-	    switch (bufIsChanged(curbuf)
-		    + (curbuf->b_p_ro * 2)
-		    + (!curbuf->b_p_ma * 4))
-	    {
-		case 1: STRCAT(buf, " +"); break;
-		case 2: STRCAT(buf, " ="); break;
-		case 3: STRCAT(buf, " =+"); break;
-		case 4:
-		case 6: STRCAT(buf, " -"); break;
-		case 5:
-		case 7: STRCAT(buf, " -+"); break;
-	    }
+#ifdef FEAT_TERMINAL
+	    if (curbuf->b_term == NULL)
+#endif
+		switch (bufIsChanged(curbuf)
+			+ (curbuf->b_p_ro * 2)
+			+ (!curbuf->b_p_ma * 4))
+		{
+		    case 1: STRCAT(buf, " +"); break;
+		    case 2: STRCAT(buf, " ="); break;
+		    case 3: STRCAT(buf, " =+"); break;
+		    case 4:
+		    case 6: STRCAT(buf, " -"); break;
+		    case 5:
+		    case 7: STRCAT(buf, " -+"); break;
+		}
 
-	    if (curbuf->b_fname != NULL)
+	    if (curbuf->b_fname != NULL
+#ifdef FEAT_TERMINAL
+		    && curbuf->b_term == NULL
+#endif
+		    )
 	    {
 		/* Get path of file, replace home dir with ~ */
 		off = (int)STRLEN(buf);
@@ -3673,9 +3684,11 @@ maketitle(void)
 		/* remove the file name */
 		p = gettail_sep(buf + off);
 		if (p == buf + off)
+		{
 		    /* must be a help buffer */
 		    vim_strncpy(buf + off, (char_u *)_("help"),
 					   (size_t)(SPACE_FOR_DIR - off - 1));
+		}
 		else
 		    *p = NUL;
 
@@ -5671,16 +5684,20 @@ buf_spname(buf_T *buf)
 	    return (char_u *)_(msg_qflist);
     }
 #endif
-#ifdef FEAT_QUICKFIX
+
     /* There is no _file_ when 'buftype' is "nofile", b_sfname
-     * contains the name as specified by the user */
+     * contains the name as specified by the user. */
     if (bt_nofile(buf))
     {
+#ifdef FEAT_TERMINAL
+	if (buf->b_term != NULL)
+	    return term_get_status_text(buf->b_term);
+#endif
 	if (buf->b_sfname != NULL)
 	    return buf->b_sfname;
 	return (char_u *)_("[Scratch]");
     }
-#endif
+
     if (buf->b_fname == NULL)
 	return (char_u *)_("[No Name]");
     return NULL;
