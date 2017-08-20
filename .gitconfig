@@ -4,9 +4,12 @@
 [remote "github"]
     url = git@github.com:huangyingw/macvim.git
     fetch = +refs/heads/*:refs/remotes/github/*
+[remote "macvim-dev"]
+    url = https://github.com/macvim-dev/macvim.git
+    fetch = +refs/heads/*:refs/remotes/macvim-dev/*
 [push]
     remote = bitbucket
     remote = github
 [gsync]
-    remote = origin
+    remote = macvim-dev
     branch = master
