@@ -1962,14 +1962,14 @@ read_error_exit(void)
  * May update the shape of the cursor.
  */
     void
-ui_cursor_shape(void)
+ui_cursor_shape_forced(int forced)
 {
 # ifdef FEAT_GUI
     if (gui.in_use)
 	gui_update_cursor_later();
     else
 # endif
-	term_cursor_shape();
+	term_cursor_mode(forced);
 
 # ifdef MCH_CURSOR_SHAPE
     mch_update_cursor();
@@ -1978,6 +1978,12 @@ ui_cursor_shape(void)
 # ifdef FEAT_CONCEAL
     conceal_check_cursur_line();
 # endif
+}
+
+    void
+ui_cursor_shape(void)
+{
+    ui_cursor_shape_forced(FALSE);
 }
 #endif
 
@@ -2723,6 +2729,8 @@ retnomove:
 #ifdef FEAT_WINDOWS
 	/* find the window where the row is in */
 	wp = mouse_find_win(&row, &col);
+	if (wp == NULL)
+	    return IN_UNKNOWN;
 #else
 	wp = firstwin;
 #endif
@@ -3131,11 +3139,13 @@ mouse_comp_pos(
 /*
  * Find the window at screen position "*rowp" and "*colp".  The positions are
  * updated to become relative to the top-left of the window.
+ * Returns NULL when something is wrong.
  */
     win_T *
 mouse_find_win(int *rowp, int *colp UNUSED)
 {
     frame_T	*fp;
+    win_T	*wp;
 
     fp = topframe;
     *rowp -= firstwin->w_winrow;
@@ -3162,7 +3172,12 @@ mouse_find_win(int *rowp, int *colp UNUSED)
 	    }
 	}
     }
-    return fp->fr_win;
+    /* When using a timer that closes a window the window might not actually
+     * exist. */
+    FOR_ALL_WINDOWS(wp)
+	if (wp == fp->fr_win)
+	    return wp;
+    return NULL;
 }
 #endif
 
@@ -3186,6 +3201,8 @@ get_fpos_of_mouse(pos_T *mpos)
 #ifdef FEAT_WINDOWS
     /* find the window where the row is in */
     wp = mouse_find_win(&row, &col);
+    if (wp == NULL)
+	return IN_UNKNOWN;
 #else
     wp = firstwin;
 #endif

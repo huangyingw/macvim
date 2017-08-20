@@ -485,8 +485,9 @@ struct vimoption
 #if defined(FEAT_DIFF) || defined(FEAT_FOLDING) || defined(FEAT_SPELL) \
 	|| defined(FEAT_WINDOWS) || defined(FEAT_CLIPBOARD) \
 	|| defined(FEAT_INS_EXPAND) || defined(FEAT_SYN_HL) \
-	|| defined(FEAT_CONCEAL) || defined(FEAT_QUICKFIX)
-# define HIGHLIGHT_INIT "8:SpecialKey,~:EndOfBuffer,@:NonText,d:Directory,e:ErrorMsg,i:IncSearch,l:Search,m:MoreMsg,M:ModeMsg,n:LineNr,N:CursorLineNr,r:Question,s:StatusLine,S:StatusLineNC,c:VertSplit,t:Title,v:Visual,V:VisualNOS,w:WarningMsg,W:WildMenu,f:Folded,F:FoldColumn,A:DiffAdd,C:DiffChange,D:DiffDelete,T:DiffText,>:SignColumn,-:Conceal,B:SpellBad,P:SpellCap,R:SpellRare,L:SpellLocal,+:Pmenu,=:PmenuSel,x:PmenuSbar,X:PmenuThumb,*:TabLine,#:TabLineSel,_:TabLineFill,!:CursorColumn,.:CursorLine,o:ColorColumn,q:QuickFixLine"
+	|| defined(FEAT_CONCEAL) || defined(FEAT_QUICKFIX) \
+	|| defined(FEAT_TERMINAL)
+# define HIGHLIGHT_INIT "8:SpecialKey,~:EndOfBuffer,@:NonText,d:Directory,e:ErrorMsg,i:IncSearch,l:Search,m:MoreMsg,M:ModeMsg,n:LineNr,N:CursorLineNr,r:Question,s:StatusLine,S:StatusLineNC,c:VertSplit,t:Title,v:Visual,V:VisualNOS,w:WarningMsg,W:WildMenu,f:Folded,F:FoldColumn,A:DiffAdd,C:DiffChange,D:DiffDelete,T:DiffText,>:SignColumn,-:Conceal,B:SpellBad,P:SpellCap,R:SpellRare,L:SpellLocal,+:Pmenu,=:PmenuSel,x:PmenuSbar,X:PmenuThumb,*:TabLine,#:TabLineSel,_:TabLineFill,!:CursorColumn,.:CursorLine,o:ColorColumn,q:QuickFixLine,z:StatusLineTerm,Z:StatusLineTermNC"
 #else
 # define HIGHLIGHT_INIT "8:SpecialKey,@:NonText,d:Directory,e:ErrorMsg,i:IncSearch,l:Search,m:MoreMsg,M:ModeMsg,n:LineNr,N:CursorLineNr,r:Question,s:StatusLine,S:StatusLineNC,t:Title,v:Visual,w:WarningMsg,W:WildMenu,>:SignColumn,*:TabLine,#:TabLineSel,_:TabLineFill"
 #endif
@@ -2863,7 +2864,7 @@ static struct vimoption options[] =
     {"termkey", "tk",	    P_STRING|P_ALLOCED|P_RWIN|P_VI_DEF,
 #ifdef FEAT_TERMINAL
 			    (char_u *)VAR_WIN, PV_TK,
-			    {(char_u *)"\x17", (char_u *)NULL}
+			    {(char_u *)"", (char_u *)NULL}
 #else
 			    (char_u *)NULL, PV_NONE,
 			    {(char_u *)NULL, (char_u *)0L}
@@ -3194,6 +3195,20 @@ static struct vimoption options[] =
 			    (char_u *)NULL, PV_NONE,
 #endif
 			    {(char_u *)1L, (char_u *)0L} SCRIPTID_INIT},
+    {"winptydll", NULL,	    P_STRING|P_EXPAND|P_VI_DEF|P_SECURE,
+#if defined(WIN3264) && defined(FEAT_TERMINAL)
+			    (char_u *)&p_winptydll, PV_NONE, {
+# ifdef _WIN64
+			    (char_u *)"winpty64.dll",
+# else
+			    (char_u *)"winpty32.dll",
+# endif
+				(char_u *)0L}
+#else
+			    (char_u *)NULL, PV_NONE,
+			    {(char_u *)0L, (char_u *)0L}
+#endif
+			    SCRIPTID_INIT},
     {"winwidth",   "wiw",   P_NUM|P_VI_DEF,
 #ifdef FEAT_WINDOWS
 			    (char_u *)&p_wiw, PV_NONE,
@@ -3258,6 +3273,10 @@ static struct vimoption options[] =
     p_term("t_EI", T_CEI)
     p_term("t_fs", T_FS)
     p_term("t_IE", T_CIE)
+    p_term("t_SC", T_CSC)
+    p_term("t_EC", T_CEC)
+    p_term("t_SH", T_CSH)
+    p_term("t_RS", T_CRS)
     p_term("t_IS", T_CIS)
     p_term("t_ke", T_KE)
     p_term("t_ks", T_KS)
@@ -8359,12 +8378,23 @@ set_bool_option(
     }
 #endif
 
-#ifdef FEAT_TITLE
     /* when 'modifiable' is changed, redraw the window title */
     else if ((int *)varp == &curbuf->b_p_ma)
     {
+# ifdef FEAT_TERMINAL
+	/* Cannot set 'modifiable' when in Terminal mode. */
+	if (term_in_normal_mode()
+			 || (bt_terminal(curbuf) && !term_is_finished(curbuf)))
+	{
+	    curbuf->b_p_ma = FALSE;
+	    return (char_u *)N_("E946: Cannot make a terminal with running job modifiable");
+	}
+# endif
+# ifdef FEAT_TITLE
 	redraw_titles();
+# endif
     }
+#ifdef FEAT_TITLE
     /* when 'endofline' is changed, redraw the window title */
     else if ((int *)varp == &curbuf->b_p_eol)
     {
