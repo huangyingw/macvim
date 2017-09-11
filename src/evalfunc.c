@@ -328,6 +328,7 @@ static void f_searchpairpos(typval_T *argvars, typval_T *rettv);
 static void f_searchpos(typval_T *argvars, typval_T *rettv);
 static void f_server2client(typval_T *argvars, typval_T *rettv);
 static void f_serverlist(typval_T *argvars, typval_T *rettv);
+static void f_setbufline(typval_T *argvars, typval_T *rettv);
 static void f_setbufvar(typval_T *argvars, typval_T *rettv);
 static void f_setcharsearch(typval_T *argvars, typval_T *rettv);
 static void f_setcmdpos(typval_T *argvars, typval_T *rettv);
@@ -392,6 +393,7 @@ static void f_tagfiles(typval_T *argvars, typval_T *rettv);
 static void f_tempname(typval_T *argvars, typval_T *rettv);
 static void f_test_alloc_fail(typval_T *argvars, typval_T *rettv);
 static void f_test_autochdir(typval_T *argvars, typval_T *rettv);
+static void f_test_feedinput(typval_T *argvars, typval_T *rettv);
 static void f_test_override(typval_T *argvars, typval_T *rettv);
 static void f_test_garbagecollect_now(typval_T *argvars, typval_T *rettv);
 static void f_test_ignore_error(typval_T *argvars, typval_T *rettv);
@@ -764,6 +766,7 @@ static struct fst
     {"searchpos",	1, 4, f_searchpos},
     {"server2client",	2, 2, f_server2client},
     {"serverlist",	0, 0, f_serverlist},
+    {"setbufline",	3, 3, f_setbufline},
     {"setbufvar",	3, 3, f_setbufvar},
     {"setcharsearch",	1, 1, f_setcharsearch},
     {"setcmdpos",	1, 1, f_setcmdpos},
@@ -840,7 +843,7 @@ static struct fst
     {"term_getsize",	1, 1, f_term_getsize},
     {"term_getstatus",	1, 1, f_term_getstatus},
     {"term_gettitle",	1, 1, f_term_gettitle},
-    {"term_gettty",	1, 1, f_term_gettty},
+    {"term_gettty",	1, 2, f_term_gettty},
     {"term_list",	0, 0, f_term_list},
     {"term_scrape",	2, 2, f_term_scrape},
     {"term_sendkeys",	2, 2, f_term_sendkeys},
@@ -849,6 +852,7 @@ static struct fst
 #endif
     {"test_alloc_fail",	3, 3, f_test_alloc_fail},
     {"test_autochdir",	0, 0, f_test_autochdir},
+    {"test_feedinput",	1, 1, f_test_feedinput},
     {"test_garbagecollect_now",	0, 0, f_test_garbagecollect_now},
     {"test_ignore_error",	1, 1, f_test_ignore_error},
 #ifdef FEAT_JOB_CHANNEL
@@ -4817,7 +4821,7 @@ get_qf_loc_list(int is_qf, win_T *wp, typval_T *what_arg, typval_T *rettv)
     {
 	if (rettv_list_alloc(rettv) == OK)
 	    if (is_qf || wp != NULL)
-		(void)get_errorlist(wp, -1, rettv->vval.v_list);
+		(void)get_errorlist(NULL, wp, -1, rettv->vval.v_list);
     }
     else
     {
@@ -7269,10 +7273,17 @@ f_mapcheck(typval_T *argvars, typval_T *rettv)
     get_maparg(argvars, rettv, FALSE);
 }
 
-static void find_some_match(typval_T *argvars, typval_T *rettv, int start);
+typedef enum
+{
+    MATCH_END,	    /* matchend() */
+    MATCH_MATCH,    /* match() */
+    MATCH_STR,	    /* matchstr() */
+    MATCH_LIST,	    /* matchlist() */
+    MATCH_POS	    /* matchstrpos() */
+} matchtype_T;
 
     static void
-find_some_match(typval_T *argvars, typval_T *rettv, int type)
+find_some_match(typval_T *argvars, typval_T *rettv, matchtype_T type)
 {
     char_u	*str = NULL;
     long	len = 0;
@@ -7296,13 +7307,13 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
     p_cpo = (char_u *)"";
 
     rettv->vval.v_number = -1;
-    if (type == 3 || type == 4)
+    if (type == MATCH_LIST || type == MATCH_POS)
     {
-	/* type 3: return empty list when there are no matches.
-	 * type 4: return ["", -1, -1, -1] */
+	/* type MATCH_LIST: return empty list when there are no matches.
+	 * type MATCH_POS: return ["", -1, -1, -1] */
 	if (rettv_list_alloc(rettv) == FAIL)
 	    goto theend;
-	if (type == 4
+	if (type == MATCH_POS
 		&& (list_append_string(rettv->vval.v_list,
 					    (char_u *)"", 0) == FAIL
 		    || list_append_number(rettv->vval.v_list,
@@ -7317,7 +7328,7 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
 		goto theend;
 	}
     }
-    else if (type == 2)
+    else if (type == MATCH_STR)
     {
 	rettv->v_type = VAR_STRING;
 	rettv->vval.v_string = NULL;
@@ -7429,7 +7440,7 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
 
 	if (match)
 	{
-	    if (type == 4)
+	    if (type == MATCH_POS)
 	    {
 		listitem_T *li1 = rettv->vval.v_list->lv_first;
 		listitem_T *li2 = li1->li_next;
@@ -7446,7 +7457,7 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
 		if (l != NULL)
 		    li2->li_tv.vval.v_number = (varnumber_T)idx;
 	    }
-	    else if (type == 3)
+	    else if (type == MATCH_LIST)
 	    {
 		int i;
 
@@ -7466,7 +7477,7 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
 			break;
 		}
 	    }
-	    else if (type == 2)
+	    else if (type == MATCH_STR)
 	    {
 		/* return matched string */
 		if (l != NULL)
@@ -7479,7 +7490,7 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
 		rettv->vval.v_number = idx;
 	    else
 	    {
-		if (type != 0)
+		if (type != MATCH_END)
 		    rettv->vval.v_number =
 				      (varnumber_T)(regmatch.startp[0] - str);
 		else
@@ -7491,12 +7502,11 @@ find_some_match(typval_T *argvars, typval_T *rettv, int type)
 	vim_regfree(regmatch.regprog);
     }
 
-    if (type == 4 && l == NULL)
+theend:
+    if (type == MATCH_POS && l == NULL && rettv->vval.v_list != NULL)
 	/* matchstrpos() without a list: drop the second item. */
 	listitem_remove(rettv->vval.v_list,
 				       rettv->vval.v_list->lv_first->li_next);
-
-theend:
     vim_free(tofree);
     p_cpo = save_cpo;
 }
@@ -7507,7 +7517,7 @@ theend:
     static void
 f_match(typval_T *argvars, typval_T *rettv)
 {
-    find_some_match(argvars, rettv, 1);
+    find_some_match(argvars, rettv, MATCH_MATCH);
 }
 
 /*
@@ -7675,7 +7685,7 @@ f_matchdelete(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
     static void
 f_matchend(typval_T *argvars, typval_T *rettv)
 {
-    find_some_match(argvars, rettv, 0);
+    find_some_match(argvars, rettv, MATCH_END);
 }
 
 /*
@@ -7684,7 +7694,7 @@ f_matchend(typval_T *argvars, typval_T *rettv)
     static void
 f_matchlist(typval_T *argvars, typval_T *rettv)
 {
-    find_some_match(argvars, rettv, 3);
+    find_some_match(argvars, rettv, MATCH_LIST);
 }
 
 /*
@@ -7693,7 +7703,7 @@ f_matchlist(typval_T *argvars, typval_T *rettv)
     static void
 f_matchstr(typval_T *argvars, typval_T *rettv)
 {
-    find_some_match(argvars, rettv, 2);
+    find_some_match(argvars, rettv, MATCH_STR);
 }
 
 /*
@@ -7702,7 +7712,7 @@ f_matchstr(typval_T *argvars, typval_T *rettv)
     static void
 f_matchstrpos(typval_T *argvars, typval_T *rettv)
 {
-    find_some_match(argvars, rettv, 4);
+    find_some_match(argvars, rettv, MATCH_POS);
 }
 
 static void max_min(typval_T *argvars, typval_T *rettv, int domax);
@@ -9889,6 +9899,118 @@ f_serverlist(typval_T *argvars UNUSED, typval_T *rettv)
 }
 
 /*
+ * Set line or list of lines in buffer "buf".
+ */
+    static void
+set_buffer_lines(buf_T *buf, linenr_T lnum, typval_T *lines, typval_T *rettv)
+{
+    char_u	*line = NULL;
+    list_T	*l = NULL;
+    listitem_T	*li = NULL;
+    long	added = 0;
+    linenr_T	lcount;
+    buf_T	*curbuf_save;
+    int		is_curbuf = buf == curbuf;
+
+    /* When using the current buffer ml_mfp will be set if needed.  Useful when
+     * setline() is used on startup.  For other buffers the buffer must be
+     * loaded. */
+    if (buf == NULL || (!is_curbuf && buf->b_ml.ml_mfp == NULL) || lnum < 1)
+    {
+	rettv->vval.v_number = 1;	/* FAIL */
+	return;
+    }
+
+    curbuf_save = curbuf;
+    curbuf = buf;
+
+    lcount = curbuf->b_ml.ml_line_count;
+
+    if (lines->v_type == VAR_LIST)
+    {
+	l = lines->vval.v_list;
+	li = l->lv_first;
+    }
+    else
+	line = get_tv_string_chk(lines);
+
+    /* default result is zero == OK */
+    for (;;)
+    {
+	if (l != NULL)
+	{
+	    /* list argument, get next string */
+	    if (li == NULL)
+		break;
+	    line = get_tv_string_chk(&li->li_tv);
+	    li = li->li_next;
+	}
+
+	rettv->vval.v_number = 1;	/* FAIL */
+	if (line == NULL || lnum < 1 || lnum > curbuf->b_ml.ml_line_count + 1)
+	    break;
+
+	/* When coming here from Insert mode, sync undo, so that this can be
+	 * undone separately from what was previously inserted. */
+	if (u_sync_once == 2)
+	{
+	    u_sync_once = 1; /* notify that u_sync() was called */
+	    u_sync(TRUE);
+	}
+
+	if (lnum <= curbuf->b_ml.ml_line_count)
+	{
+	    /* existing line, replace it */
+	    if (u_savesub(lnum) == OK && ml_replace(lnum, line, TRUE) == OK)
+	    {
+		changed_bytes(lnum, 0);
+		if (is_curbuf && lnum == curwin->w_cursor.lnum)
+		    check_cursor_col();
+		rettv->vval.v_number = 0;	/* OK */
+	    }
+	}
+	else if (added > 0 || u_save(lnum - 1, lnum) == OK)
+	{
+	    /* lnum is one past the last line, append the line */
+	    ++added;
+	    if (ml_append(lnum - 1, line, (colnr_T)0, FALSE) == OK)
+		rettv->vval.v_number = 0;	/* OK */
+	}
+
+	if (l == NULL)			/* only one string argument */
+	    break;
+	++lnum;
+    }
+
+    if (added > 0)
+	appended_lines_mark(lcount, added);
+
+    curbuf = curbuf_save;
+}
+
+/*
+ * "setbufline()" function
+ */
+    static void
+f_setbufline(argvars, rettv)
+    typval_T	*argvars;
+    typval_T	*rettv;
+{
+    linenr_T	lnum;
+    buf_T	*buf;
+
+    buf = get_buf_tv(&argvars[0], FALSE);
+    if (buf == NULL)
+	rettv->vval.v_number = 1; /* FAIL */
+    else
+    {
+	lnum = get_tv_lnum_buf(&argvars[1], buf);
+
+	set_buffer_lines(buf, lnum, &argvars[2], rettv);
+    }
+}
+
+/*
  * "setbufvar()" function
  */
     static void
@@ -10042,72 +10164,9 @@ f_setfperm(typval_T *argvars, typval_T *rettv)
     static void
 f_setline(typval_T *argvars, typval_T *rettv)
 {
-    linenr_T	lnum;
-    char_u	*line = NULL;
-    list_T	*l = NULL;
-    listitem_T	*li = NULL;
-    long	added = 0;
-    linenr_T	lcount = curbuf->b_ml.ml_line_count;
+    linenr_T	lnum = get_tv_lnum(&argvars[0]);
 
-    lnum = get_tv_lnum(&argvars[0]);
-    if (argvars[1].v_type == VAR_LIST)
-    {
-	l = argvars[1].vval.v_list;
-	li = l->lv_first;
-    }
-    else
-	line = get_tv_string_chk(&argvars[1]);
-
-    /* default result is zero == OK */
-    for (;;)
-    {
-	if (l != NULL)
-	{
-	    /* list argument, get next string */
-	    if (li == NULL)
-		break;
-	    line = get_tv_string_chk(&li->li_tv);
-	    li = li->li_next;
-	}
-
-	rettv->vval.v_number = 1;	/* FAIL */
-	if (line == NULL || lnum < 1 || lnum > curbuf->b_ml.ml_line_count + 1)
-	    break;
-
-	/* When coming here from Insert mode, sync undo, so that this can be
-	 * undone separately from what was previously inserted. */
-	if (u_sync_once == 2)
-	{
-	    u_sync_once = 1; /* notify that u_sync() was called */
-	    u_sync(TRUE);
-	}
-
-	if (lnum <= curbuf->b_ml.ml_line_count)
-	{
-	    /* existing line, replace it */
-	    if (u_savesub(lnum) == OK && ml_replace(lnum, line, TRUE) == OK)
-	    {
-		changed_bytes(lnum, 0);
-		if (lnum == curwin->w_cursor.lnum)
-		    check_cursor_col();
-		rettv->vval.v_number = 0;	/* OK */
-	    }
-	}
-	else if (added > 0 || u_save(lnum - 1, lnum) == OK)
-	{
-	    /* lnum is one past the last line, append the line */
-	    ++added;
-	    if (ml_append(lnum - 1, line, (colnr_T)0, FALSE) == OK)
-		rettv->vval.v_number = 0;	/* OK */
-	}
-
-	if (l == NULL)			/* only one string argument */
-	    break;
-	++lnum;
-    }
-
-    if (added > 0)
-	appended_lines_mark(lcount, added);
+    set_buffer_lines(curbuf, lnum, &argvars[1], rettv);
 }
 
 static void set_qf_ll_list(win_T *wp, typval_T *list_arg, typval_T *action_arg, typval_T *what_arg, typval_T *rettv);
@@ -11864,6 +11923,10 @@ f_synIDattr(typval_T *argvars UNUSED, typval_T *rettv)
 	case 's':
 		if (TOLOWER_ASC(what[1]) == 'p')	/* sp[#] */
 		    p = highlight_color(id, what, modec);
+							/* strikeout */
+		else if (TOLOWER_ASC(what[1]) == 't' &&
+			TOLOWER_ASC(what[2]) == 'r')
+		    p = highlight_has_attr(id, HL_STRIKETHROUGH, modec);
 		else					/* standout */
 		    p = highlight_has_attr(id, HL_STANDOUT, modec);
 		break;
@@ -12483,6 +12546,23 @@ f_test_autochdir(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 {
 #if defined(FEAT_AUTOCHDIR)
     test_autochdir = TRUE;
+#endif
+}
+
+/*
+ * "test_feedinput()"
+ */
+    static void
+f_test_feedinput(typval_T *argvars, typval_T *rettv UNUSED)
+{
+#ifdef USE_INPUT_BUF
+    char_u	*val = get_tv_string_chk(&argvars[0]);
+
+    if (val != NULL)
+    {
+	trash_input_buf();
+	add_to_input_buf_csi(val, (int)STRLEN(val));
+    }
 #endif
 }
 

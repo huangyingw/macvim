@@ -3,6 +3,7 @@ void ex_terminal(exarg_T *eap);
 void free_terminal(buf_T *buf);
 void write_to_term(buf_T *buffer, char_u *msg, channel_T *channel);
 int term_job_running(term_T *term);
+int term_none_open(term_T *term);
 int term_in_normal_mode(void);
 void term_enter_job_mode(void);
 int send_keys_to_term(term_T *term, int c, int typed);
@@ -34,5 +35,6 @@ void f_term_scrape(typval_T *argvars, typval_T *rettv);
 void f_term_sendkeys(typval_T *argvars, typval_T *rettv);
 void f_term_start(typval_T *argvars, typval_T *rettv);
 void f_term_wait(typval_T *argvars, typval_T *rettv);
+void term_send_eof(channel_T *ch);
 int terminal_enabled(void);
 /* vim: set ft=c : */

@@ -508,6 +508,10 @@ channel_gui_register_one(channel_T *channel, ch_part_T part)
     if (!CH_HAS_GUI)
 	return;
 
+    /* gets stuck in handling events for a not connected channel */
+    if (channel->ch_keep_open)
+	return;
+
 # ifdef FEAT_GUI_X11
     /* Tell notifier we are interested in being called
      * when there is input on the editor connection socket. */
@@ -561,9 +565,12 @@ channel_gui_register(channel_T *channel)
 {
     if (channel->CH_SOCK_FD != INVALID_FD)
 	channel_gui_register_one(channel, PART_SOCK);
-    if (channel->CH_OUT_FD != INVALID_FD)
+    if (channel->CH_OUT_FD != INVALID_FD
+	    && channel->CH_OUT_FD != channel->CH_SOCK_FD)
 	channel_gui_register_one(channel, PART_OUT);
-    if (channel->CH_ERR_FD != INVALID_FD)
+    if (channel->CH_ERR_FD != INVALID_FD
+	    && channel->CH_ERR_FD != channel->CH_SOCK_FD
+	    && channel->CH_ERR_FD != channel->CH_OUT_FD)
 	channel_gui_register_one(channel, PART_ERR);
 }
 
@@ -983,7 +990,13 @@ ch_close_part(channel_T *channel, ch_part_T part)
 	    if ((part == PART_IN || channel->CH_IN_FD != *fd)
 		    && (part == PART_OUT || channel->CH_OUT_FD != *fd)
 		    && (part == PART_ERR || channel->CH_ERR_FD != *fd))
+	    {
+#ifdef WIN32
+		if (channel->ch_named_pipe)
+		    DisconnectNamedPipe((HANDLE)fd);
+#endif
 		fd_close(*fd);
+	    }
 	}
 	*fd = INVALID_FD;
 
@@ -1314,11 +1327,16 @@ write_buf_line(buf_T *buf, linenr_T lnum, channel_T *channel)
 	return;
     memcpy((char *)p, (char *)line, len);
 
-    for (i = 0; i < len; ++i)
-	if (p[i] == NL)
-	    p[i] = NUL;
+    if (channel->ch_write_text_mode)
+	p[len] = CAR;
+    else
+    {
+	for (i = 0; i < len; ++i)
+	    if (p[i] == NL)
+		p[i] = NUL;
 
-    p[len] = NL;
+	p[len] = NL;
+    }
     p[len + 1] = NUL;
     channel_send(channel, PART_IN, p, len + 1, "write_buf_line");
     vim_free(p);
@@ -1431,6 +1449,12 @@ channel_write_in(channel_T *channel)
     in_part->ch_buf_top = lnum;
     if (lnum > buf->b_ml.ml_line_count || lnum > in_part->ch_buf_bot)
     {
+#if defined(FEAT_TERMINAL)
+	/* Send CTRL-D or "eof_chars" to close stdin on MS-Windows. */
+	if (channel->ch_job != NULL)
+	    term_send_eof(channel);
+#endif
+
 	/* Writing is done, no longer need the buffer. */
 	in_part->ch_bufref.br_buf = NULL;
 	ch_log(channel, "Finished writing all lines to channel");
@@ -2901,7 +2925,7 @@ channel_close(channel_T *channel, int invoke_close_cb)
 	      if (channel_need_redraw)
 	      {
 		  channel_need_redraw = FALSE;
-		  redraw_after_callback();
+		  redraw_after_callback(TRUE);
 	      }
 
 	      if (!channel->ch_drop_never)
@@ -3089,7 +3113,20 @@ channel_wait(channel_T *channel, sock_T fd, int timeout)
 	    if (r && nread > 0)
 		return CW_READY;
 	    if (r == 0)
-		return CW_ERROR;
+	    {
+		DWORD err = GetLastError();
+
+		if (err != ERROR_BAD_PIPE && err != ERROR_BROKEN_PIPE)
+		    return CW_ERROR;
+
+		if (channel->ch_named_pipe)
+		{
+		    DisconnectNamedPipe((HANDLE)fd);
+		    ConnectNamedPipe((HANDLE)fd, NULL);
+		}
+		else
+		    return CW_ERROR;
+	    }
 
 	    /* perhaps write some buffer lines */
 	    channel_write_any_lines();
@@ -3272,11 +3309,13 @@ channel_read(channel_T *channel, ch_part_T part, char *func)
 
     /* Reading a disconnection (readlen == 0), or an error. */
     if (readlen <= 0)
-	ch_close_part_on_error(channel, part, (len < 0), func);
-
+    {
+	if (!channel->ch_keep_open)
+	    ch_close_part_on_error(channel, part, (len < 0), func);
+    }
 #if defined(CH_HAS_GUI) && defined(FEAT_GUI_GTK)
-    /* signal the main loop that there is something to read */
-    if (CH_HAS_GUI && gtk_main_level() > 0)
+    else if (CH_HAS_GUI && gtk_main_level() > 0)
+	/* signal the main loop that there is something to read */
 	gtk_main_quit();
 #endif
 }
@@ -3534,13 +3573,14 @@ channel_fd2channel(sock_T fd, ch_part_T *partp)
 }
 # endif
 
-# if defined(WIN32) || defined(PROTO)
+# if defined(WIN32) || defined(FEAT_GUI) || defined(PROTO)
 /*
  * Check the channels for anything that is ready to be read.
  * The data is put in the read queue.
+ * if "only_keep_open" is TRUE only check channels where ch_keep_open is set.
  */
     void
-channel_handle_events(void)
+channel_handle_events(int only_keep_open)
 {
     channel_T	*channel;
     ch_part_T	part;
@@ -3548,6 +3588,9 @@ channel_handle_events(void)
 
     for (channel = first_channel; channel != NULL; channel = channel->ch_next)
     {
+	if (only_keep_open && !channel->ch_keep_open)
+	    continue;
+
 	/* check the socket and pipes */
 	for (part = PART_SOCK; part < PART_IN; ++part)
 	{
@@ -3564,6 +3607,22 @@ channel_handle_events(void)
 	    }
 	}
     }
+}
+# endif
+
+# if defined(FEAT_GUI) || defined(PROTO)
+/*
+ * Return TRUE when there is any channel with a keep_open flag.
+ */
+    int
+channel_any_keep_open()
+{
+    channel_T	*channel;
+
+    for (channel = first_channel; channel != NULL; channel = channel->ch_next)
+	if (channel->ch_keep_open)
+	    return TRUE;
+    return FALSE;
 }
 # endif
 
@@ -3655,7 +3714,17 @@ channel_send(
 	if (part == PART_SOCK)
 	    res = sock_write(fd, (char *)buf, len);
 	else
+	{
 	    res = fd_write(fd, (char *)buf, len);
+#ifdef WIN32
+	    if (channel->ch_named_pipe && res < 0)
+	    {
+		DisconnectNamedPipe((HANDLE)fd);
+		ConnectNamedPipe((HANDLE)fd, NULL);
+	    }
+#endif
+
+	}
 	if (res < 0 && (errno == EWOULDBLOCK
 #ifdef EAGAIN
 			|| errno == EAGAIN
@@ -4037,6 +4106,7 @@ channel_select_check(int ret_in, void *rfds_in, void *wfds_in)
 	    if (ret > 0 && fd != INVALID_FD && FD_ISSET(fd, rfds))
 	    {
 		channel_read(channel, part, "channel_select_check");
+		FD_CLR(fd, rfds);
 		--ret;
 	    }
 	}
@@ -4046,6 +4116,7 @@ channel_select_check(int ret_in, void *rfds_in, void *wfds_in)
 					    && FD_ISSET(in_part->ch_fd, wfds))
 	{
 	    channel_write_input(channel);
+	    FD_CLR(in_part->ch_fd, wfds);
 	    --ret;
 	}
     }
@@ -4142,7 +4213,7 @@ channel_parse_messages(void)
     if (channel_need_redraw)
     {
 	channel_need_redraw = FALSE;
-	redraw_after_callback();
+	redraw_after_callback(TRUE);
     }
 
     --safe_to_invoke_callback;
@@ -4622,6 +4693,20 @@ get_job_options(typval_T *tv, jobopt_T *opt, int supported, int supported2)
 		    return FAIL;
 		}
 	    }
+	    else if (STRCMP(hi->hi_key, "eof_chars") == 0)
+	    {
+		char_u *p;
+
+		if (!(supported2 & JO2_EOF_CHARS))
+		    break;
+		opt->jo_set2 |= JO2_EOF_CHARS;
+		p = opt->jo_eof_chars = get_tv_string_chk(item);
+		if (p == NULL)
+		{
+		    EMSG2(_(e_invarg2), "term_opencmd");
+		    return FAIL;
+		}
+	    }
 	    else if (STRCMP(hi->hi_key, "term_rows") == 0)
 	    {
 		if (!(supported2 & JO2_TERM_ROWS))
@@ -4820,7 +4905,8 @@ job_free_contents(job_T *job)
     }
     mch_clear_job(job);
 
-    vim_free(job->jv_tty_name);
+    vim_free(job->jv_tty_in);
+    vim_free(job->jv_tty_out);
     vim_free(job->jv_stoponexit);
     free_callback(job->jv_exit_cb, job->jv_exit_partial);
 }
@@ -4902,7 +4988,7 @@ win32_escape_arg(char_u *arg)
     int		has_spaces = FALSE;
 
     /* First count the number of extra bytes required. */
-    slen = STRLEN(arg);
+    slen = (int)STRLEN(arg);
     dlen = slen;
     for (s = arg; *s != NUL; MB_PTR_ADV(s))
     {
@@ -5242,7 +5328,7 @@ job_check_ended(void)
     if (channel_need_redraw)
     {
 	channel_need_redraw = FALSE;
-	redraw_after_callback();
+	redraw_after_callback(TRUE);
     }
 }
 
@@ -5474,8 +5560,10 @@ job_info(job_T *job, dict_T *dict)
     nr = job->jv_proc_info.dwProcessId;
 #endif
     dict_add_nr_str(dict, "process", nr, NULL);
-    dict_add_nr_str(dict, "tty", 0L,
-		   job->jv_tty_name != NULL ? job->jv_tty_name : (char_u *)"");
+    dict_add_nr_str(dict, "tty_in", 0L,
+		   job->jv_tty_in != NULL ? job->jv_tty_in : (char_u *)"");
+    dict_add_nr_str(dict, "tty_out", 0L,
+		   job->jv_tty_out != NULL ? job->jv_tty_out : (char_u *)"");
 
     dict_add_nr_str(dict, "exitval", job->jv_exitval, NULL);
     dict_add_nr_str(dict, "exit_cb", 0L, job->jv_exit_cb);
