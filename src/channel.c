@@ -140,7 +140,7 @@ ch_log_active(void)
 }
 
     static void
-ch_log_lead(char *what, channel_T *ch)
+ch_log_lead(const char *what, channel_T *ch)
 {
     if (log_fd != NULL)
     {
@@ -1834,12 +1834,11 @@ channel_save(channel_T *channel, ch_part_T part, char_u *buf, int len,
 	head->rq_prev = node;
     }
 
-    if (log_fd != NULL && lead != NULL)
+    if (ch_log_active() && lead != NULL)
     {
 	ch_log_lead(lead, channel);
 	fprintf(log_fd, "'");
-	if (fwrite(buf, len, 1, log_fd) != 1)
-	    return FAIL;
+	ignored = (int)fwrite(buf, len, 1, log_fd);
 	fprintf(log_fd, "'\n");
     }
     return OK;
@@ -2951,14 +2950,27 @@ channel_close_in(channel_T *channel)
     ch_close_part(channel, PART_IN);
 }
 
+    static void
+remove_from_writeque(writeq_T *wq, writeq_T *entry)
+{
+    ga_clear(&entry->wq_ga);
+    wq->wq_next = entry->wq_next;
+    if (wq->wq_next == NULL)
+	wq->wq_prev = NULL;
+    else
+	wq->wq_next->wq_prev = NULL;
+    vim_free(entry);
+}
+
 /*
  * Clear the read buffer on "channel"/"part".
  */
     static void
 channel_clear_one(channel_T *channel, ch_part_T part)
 {
-    jsonq_T *json_head = &channel->ch_part[part].ch_json_head;
-    cbq_T   *cb_head = &channel->ch_part[part].ch_cb_head;
+    chanpart_T *ch_part = &channel->ch_part[part];
+    jsonq_T *json_head = &ch_part->ch_json_head;
+    cbq_T   *cb_head = &ch_part->ch_cb_head;
 
     while (channel_peek(channel, part) != NULL)
 	vim_free(channel_get(channel, part));
@@ -2978,10 +2990,13 @@ channel_clear_one(channel_T *channel, ch_part_T part)
 	remove_json_node(json_head, json_head->jq_next);
     }
 
-    free_callback(channel->ch_part[part].ch_callback,
-					channel->ch_part[part].ch_partial);
-    channel->ch_part[part].ch_callback = NULL;
-    channel->ch_part[part].ch_partial = NULL;
+    free_callback(ch_part->ch_callback, ch_part->ch_partial);
+    ch_part->ch_callback = NULL;
+    ch_part->ch_partial = NULL;
+
+    while (ch_part->ch_writeque.wq_next != NULL)
+	remove_from_writeque(&ch_part->ch_writeque,
+						 ch_part->ch_writeque.wq_next);
 }
 
 /*
@@ -2996,7 +3011,7 @@ channel_clear(channel_T *channel)
     channel_clear_one(channel, PART_SOCK);
     channel_clear_one(channel, PART_OUT);
     channel_clear_one(channel, PART_ERR);
-    /* there is no callback or queue for PART_IN */
+    channel_clear_one(channel, PART_IN);
     free_callback(channel->ch_callback, channel->ch_partial);
     channel->ch_callback = NULL;
     channel->ch_partial = NULL;
@@ -3394,7 +3409,7 @@ channel_read_block(channel_T *channel, ch_part_T part, int timeout)
 	    channel_consume(channel, part, (int)(nl - buf) + 1);
 	}
     }
-    if (log_fd != NULL)
+    if (ch_log_active())
 	ch_log(channel, "Returning %d bytes", (int)STRLEN(msg));
     return msg;
 }
@@ -3679,7 +3694,7 @@ channel_send(
 	return FAIL;
     }
 
-    if (log_fd != NULL)
+    if (ch_log_active())
     {
 	ch_log_lead("SEND ", channel);
 	fprintf(log_fd, "'");
@@ -3744,12 +3759,7 @@ channel_send(
 		if (entry != NULL)
 		{
 		    /* Remove the entry from the write queue. */
-		    ga_clear(&entry->wq_ga);
-		    wq->wq_next = entry->wq_next;
-		    if (wq->wq_next == NULL)
-			wq->wq_prev = NULL;
-		    else
-			wq->wq_next->wq_prev = NULL;
+		    remove_from_writeque(wq, entry);
 		    continue;
 		}
 		if (did_use_queue)

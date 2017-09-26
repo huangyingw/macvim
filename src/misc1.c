@@ -495,7 +495,7 @@ get_breakindent_win(
     static varnumber_T prev_tick = 0;   /* changedtick of cached value */
     int		    bri = 0;
     /* window width minus window margin space, i.e. what rests for text */
-    const int	    eff_wwidth = W_WIDTH(wp)
+    const int	    eff_wwidth = wp->w_width
 			    - ((wp->w_p_nu || wp->w_p_rnu)
 				&& (vim_strchr(p_cpo, CPO_NUMCOL) == NULL)
 						? number_width(wp) + 1 : 0);
@@ -1984,10 +1984,8 @@ plines_win_nofill(
     if (!wp->w_p_wrap)
 	return 1;
 
-#ifdef FEAT_WINDOWS
     if (wp->w_width == 0)
 	return 1;
-#endif
 
 #ifdef FEAT_FOLDING
     /* A folded lines is handled just like an empty line. */
@@ -2028,7 +2026,7 @@ plines_win_nofold(win_T *wp, linenr_T lnum)
     /*
      * Add column offset for 'number', 'relativenumber' and 'foldcolumn'.
      */
-    width = W_WIDTH(wp) - win_col_off(wp);
+    width = wp->w_width - win_col_off(wp);
     if (width <= 0)
 	return 32000;
     if (col <= width)
@@ -2060,10 +2058,8 @@ plines_win_col(win_T *wp, linenr_T lnum, long column)
     if (!wp->w_p_wrap)
 	return lines + 1;
 
-#ifdef FEAT_WINDOWS
     if (wp->w_width == 0)
 	return lines + 1;
-#endif
 
     line = s = ml_get_buf(wp->w_buffer, lnum, FALSE);
 
@@ -2087,7 +2083,7 @@ plines_win_col(win_T *wp, linenr_T lnum, long column)
     /*
      * Add column offset for 'number', 'relativenumber', 'foldcolumn', etc.
      */
-    width = W_WIDTH(wp) - win_col_off(wp);
+    width = wp->w_width - win_col_off(wp);
     if (width <= 0)
 	return 9999;
 
@@ -2787,10 +2783,8 @@ changed_int(void)
 {
     curbuf->b_changed = TRUE;
     ml_setflags(curbuf);
-#ifdef FEAT_WINDOWS
     check_status(curbuf);
     redraw_tabline = TRUE;
-#endif
 #ifdef FEAT_TITLE
     need_maketitle = TRUE;	    /* set window title later */
 #endif
@@ -2995,9 +2989,7 @@ changed_common(
     long	xtra)
 {
     win_T	*wp;
-#ifdef FEAT_WINDOWS
     tabpage_T	*tp;
-#endif
     int		i;
 #ifdef FEAT_JUMPLIST
     int		cols;
@@ -3199,10 +3191,8 @@ unchanged(
 	ml_setflags(buf);
 	if (ff)
 	    save_file_ff(buf);
-#ifdef FEAT_WINDOWS
 	check_status(buf);
 	redraw_tabline = TRUE;
-#endif
 #ifdef FEAT_TITLE
 	need_maketitle = TRUE;	    /* set window title later */
 #endif
@@ -3213,7 +3203,6 @@ unchanged(
 #endif
 }
 
-#if defined(FEAT_WINDOWS) || defined(PROTO)
 /*
  * check_status: called when the status bars for the buffer 'buf'
  *		 need to be updated
@@ -3231,7 +3220,6 @@ check_status(buf_T *buf)
 		must_redraw = VALID;
 	}
 }
-#endif
 
 /*
  * If the file is readonly, give a warning message with the first change.
@@ -5030,8 +5018,6 @@ vim_ispathlistsep(int c)
 }
 #endif
 
-#if defined(FEAT_GUI_TABLINE) || defined(FEAT_WINDOWS) \
-	|| defined(FEAT_EVAL) || defined(PROTO)
 /*
  * Shorten the path of a file from "~/foo/../.bar/fname" to "~/f/../.b/fname"
  * It's done in-place.
@@ -5074,7 +5060,6 @@ shorten_dir(char_u *str)
 	}
     }
 }
-#endif
 
 /*
  * Return TRUE if the directory of "fname" exists, FALSE otherwise.
