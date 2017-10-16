@@ -13,3 +13,9 @@
 [gsync]
     remote = macvim-dev
     branch = master
+[gdif]
+    ignore = .gitconfig
+    ignore = .gitignore
+    ignore = build.sh
+    ignore = prunefile.conf
+    ignore = src/window.c
