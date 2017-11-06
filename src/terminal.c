@@ -38,6 +38,8 @@
  * in tl_scrollback are no longer used.
  *
  * TODO:
+ * - Termdebug: issue #2154 might be avoided by adding -quiet to gdb?
+ *   patch by Christian, 2017 Oct 23.
  * - in GUI vertical split causes problems.  Cursor is flickering. (Hirohito
  *   Higashi, 2017 Sep 19)
  * - double click in Window toolbar starts Visual mode (but not always?).
@@ -46,9 +48,16 @@
  * - Redirecting output does not work on MS-Windows, Test_terminal_redir_file()
  *   is disabled.
  * - cursor blinks in terminal on widows with a timer. (xtal8, #2142)
+ * - When closing gvim with an active terminal buffer, the dialog suggests
+ *   saving the buffer.  Should say something else. (Manas Thakur, #2215)
+ *   Also: #2223
  * - implement term_setsize()
+ * - Termdebug does not work when Vim build with mzscheme.  gdb hangs.
  * - MS-Windows GUI: WinBar has  tearoff item
  * - MS-Windows GUI: still need to type a key after shell exits?  #1924
+ * - What to store in a session file?  Shell at the prompt would be OK to
+ *   restore, but others may not.  Open the window and let the user start the
+ *   command?
  * - add test for giving error for invalid 'termsize' value.
  * - support minimal size when 'termsize' is "rows*cols".
  * - support minimal size when 'termsize' is empty?
@@ -1531,6 +1540,9 @@ terminal_loop(int blocking)
     int		c;
     int		termkey = 0;
     int		ret;
+#ifdef UNIX
+    int		tty_fd = curbuf->b_term->tl_job->jv_channel->ch_part[get_tty_part(curbuf->b_term)].ch_fd;
+#endif
 
     /* Remember the terminal we are sending keys to.  However, the terminal
      * might be closed while waiting for a character, e.g. typing "exit" in a
@@ -1543,26 +1555,6 @@ terminal_loop(int blocking)
     position_cursor(curwin, &curbuf->b_term->tl_cursor_pos);
     may_set_cursor_props(curbuf->b_term);
 
-#ifdef UNIX
-    {
-	int part = get_tty_part(curbuf->b_term);
-	int fd = curbuf->b_term->tl_job->jv_channel->ch_part[part].ch_fd;
-
-	if (isatty(fd))
-	{
-	    ttyinfo_T info;
-
-	    /* Get the current backspace and enter characters of the pty. */
-	    if (get_tty_info(fd, &info) == OK)
-	    {
-		term_backspace_char = info.backspace;
-		term_enter_char = info.enter;
-		term_nl_does_cr = info.nl_does_cr;
-	    }
-	}
-    }
-#endif
-
     while (blocking || vpeekc() != NUL)
     {
 	/* TODO: skip screen update when handling a sequence of keys. */
@@ -1571,6 +1563,26 @@ terminal_loop(int blocking)
 	    if (update_screen(0) == FAIL)
 		break;
 	update_cursor(curbuf->b_term, FALSE);
+
+#ifdef UNIX
+	/*
+	 * The shell or another program may change the tty settings.  Getting
+	 * them for every typed character is a bit of overhead, but it's needed
+	 * for the first CR typed, e.g. when Vim starts in a shell.
+	 */
+	if (isatty(tty_fd))
+	{
+	    ttyinfo_T info;
+
+	    /* Get the current backspace and enter characters of the pty. */
+	    if (get_tty_info(tty_fd, &info) == OK)
+	    {
+		term_backspace_char = info.backspace;
+		term_enter_char = info.enter;
+		term_nl_does_cr = info.nl_does_cr;
+	    }
+	}
+#endif
 
 	c = term_vgetc();
 	if (!term_use_loop())
@@ -3395,6 +3407,7 @@ term_and_job_init(
 {
     WCHAR	    *cmd_wchar = NULL;
     WCHAR	    *cwd_wchar = NULL;
+    WCHAR	    *env_wchar = NULL;
     channel_T	    *channel = NULL;
     job_T	    *job = NULL;
     DWORD	    error;
@@ -3403,7 +3416,7 @@ term_and_job_init(
     HANDLE	    child_thread_handle;
     void	    *winpty_err;
     void	    *spawn_config = NULL;
-    garray_T	    ga;
+    garray_T	    ga_cmd, ga_env;
     char_u	    *cmd;
 
     if (dyn_winpty_init(TRUE) == FAIL)
@@ -3413,10 +3426,10 @@ term_and_job_init(
 	cmd = argvar->vval.v_string;
     else
     {
-	ga_init2(&ga, (int)sizeof(char*), 20);
-	if (win32_build_cmd(argvar->vval.v_list, &ga) == FAIL)
+	ga_init2(&ga_cmd, (int)sizeof(char*), 20);
+	if (win32_build_cmd(argvar->vval.v_list, &ga_cmd) == FAIL)
 	    goto failed;
-	cmd = ga.ga_data;
+	cmd = ga_cmd.ga_data;
     }
 
     cmd_wchar = enc_to_utf16(cmd, NULL);
@@ -3424,6 +3437,12 @@ term_and_job_init(
 	return FAIL;
     if (opt->jo_cwd != NULL)
 	cwd_wchar = enc_to_utf16(opt->jo_cwd, NULL);
+    if (opt->jo_env != NULL)
+    {
+	ga_init2(&ga_env, (int)sizeof(char*), 20);
+	win32_build_env(opt->jo_env, &ga_env);
+	env_wchar = ga_env.ga_data;
+    }
 
     job = job_alloc();
     if (job == NULL)
@@ -3451,7 +3470,7 @@ term_and_job_init(
 	    NULL,
 	    cmd_wchar,
 	    cwd_wchar,
-	    NULL,
+	    env_wchar,
 	    &winpty_err);
     if (spawn_config == NULL)
 	goto failed;
@@ -3524,7 +3543,9 @@ term_and_job_init(
 
 failed:
     if (argvar->v_type == VAR_LIST)
-	vim_free(ga.ga_data);
+	vim_free(ga_cmd.ga_data);
+    if (opt->jo_env != NULL)
+	vim_free(ga_env.ga_data);
     vim_free(cmd_wchar);
     vim_free(cwd_wchar);
     if (spawn_config != NULL)

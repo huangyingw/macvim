@@ -11,7 +11,11 @@ let s:python = PythonProg()
 " Open a terminal with a shell, assign the job to g:job and return the buffer
 " number.
 func Run_shell_in_terminal(options)
-  let buf = term_start(&shell, a:options)
+  if has('win32')
+    let buf = term_start([&shell,'/k'], a:options)
+  else
+    let buf = term_start(&shell, a:options)
+  endif
 
   let termlist = term_list()
   call assert_equal(1, len(termlist))
@@ -185,15 +189,14 @@ func Test_terminal_scrape_123()
   call term_wait(1234)
 
   call term_wait(buf)
-  let g:buf = buf
   " On MS-Windows we first get a startup message of two lines, wait for the
   " "cls" to happen, after that we have one line with three characters.
-  call WaitFor('len(term_scrape(g:buf, 1)) == 3')
+  call WaitFor({-> len(term_scrape(buf, 1)) == 3})
   call Check_123(buf)
 
   " Must still work after the job ended.
-  let g:job = term_getjob(buf)
-  call WaitFor('job_status(g:job) == "dead"')
+  let job = term_getjob(buf)
+  call WaitFor({-> job_status(job) == "dead"})
   call term_wait(buf)
   call Check_123(buf)
 
@@ -209,17 +212,17 @@ func Test_terminal_scrape_multibyte()
   if has('win32')
     " Run cmd with UTF-8 codepage to make the type command print the expected
     " multibyte characters.
-    let g:buf = term_start("cmd /K chcp 65001")
-    call term_sendkeys(g:buf, "type Xtext\<CR>")
-    call term_sendkeys(g:buf, "exit\<CR>")
-    let g:line = 4
+    let buf = term_start("cmd /K chcp 65001")
+    call term_sendkeys(buf, "type Xtext\<CR>")
+    call term_sendkeys(buf, "exit\<CR>")
+    let line = 4
   else
-    let g:buf = term_start("cat Xtext")
-    let g:line = 1
+    let buf = term_start("cat Xtext")
+    let line = 1
   endif
 
-  call WaitFor('len(term_scrape(g:buf, g:line)) >= 7 && term_scrape(g:buf, g:line)[0].chars == "l"')
-  let l = term_scrape(g:buf, g:line)
+  call WaitFor({-> len(term_scrape(buf, line)) >= 7 && term_scrape(buf, line)[0].chars == "l"})
+  let l = term_scrape(buf, line)
   call assert_true(len(l) >= 7)
   call assert_equal('l', l[0].chars)
   call assert_equal('é', l[1].chars)
@@ -231,13 +234,11 @@ func Test_terminal_scrape_multibyte()
   call assert_equal('r', l[5].chars)
   call assert_equal('s', l[6].chars)
 
-  let g:job = term_getjob(g:buf)
-  call WaitFor('job_status(g:job) == "dead"')
-  call term_wait(g:buf)
+  let job = term_getjob(buf)
+  call WaitFor({-> job_status(job) == "dead"})
+  call term_wait(buf)
 
-  exe g:buf . 'bwipe'
-  unlet g:buf
-  unlet g:line
+  exe buf . 'bwipe'
   call delete('Xtext')
 endfunc
 
@@ -250,8 +251,8 @@ func Test_terminal_scroll()
   endif
   let buf = term_start(cmd)
 
-  let g:job = term_getjob(buf)
-  call WaitFor('job_status(g:job) == "dead"')
+  let job = term_getjob(buf)
+  call WaitFor({-> job_status(job) == "dead"})
   call term_wait(buf)
   if has('win32')
     " TODO: this should not be needed
@@ -430,13 +431,14 @@ func Test_terminal_cwd()
 endfunc
 
 func Test_terminal_env()
-  if !has('unix')
-    return
-  endif
   let g:buf = Run_shell_in_terminal({'env': {'TESTENV': 'correct'}})
   " Wait for the shell to display a prompt
   call WaitFor('term_getline(g:buf, 1) != ""')
-  call term_sendkeys(g:buf, "echo $TESTENV\r")
+  if has('win32')
+    call term_sendkeys(g:buf, "echo %TESTENV%\r")
+  else
+    call term_sendkeys(g:buf, "echo $TESTENV\r")
+  endif
   call term_wait(g:buf)
   call Stop_shell_in_terminal(g:buf)
   call WaitFor('getline(2) == "correct"')
@@ -478,7 +480,7 @@ func Test_terminal_list_args()
 endfunction
 
 func Test_terminal_noblock()
-  let g:buf = term_start(&shell)
+  let buf = term_start(&shell)
   if has('mac')
     " The shell or something else has a problem dealing with more than 1000
     " characters at the same time.
@@ -493,26 +495,24 @@ func Test_terminal_noblock()
   endif
 
   for c in ['a','b','c','d','e','f','g','h','i','j','k']
-    call term_sendkeys(g:buf, 'echo ' . repeat(c, len) . "\<cr>")
+    call term_sendkeys(buf, 'echo ' . repeat(c, len) . "\<cr>")
   endfor
-  call term_sendkeys(g:buf, "echo done\<cr>")
+  call term_sendkeys(buf, "echo done\<cr>")
 
   " On MS-Windows there is an extra empty line below "done".  Find "done" in
   " the last-but-one or the last-but-two line.
-  let g:lnum = term_getsize(g:buf)[0] - 1
-  call WaitFor('term_getline(g:buf, g:lnum) =~ "done" || term_getline(g:buf, g:lnum - 1) =~ "done"', 3000)
-  let line = term_getline(g:buf, g:lnum)
+  let lnum = term_getsize(buf)[0] - 1
+  call WaitFor({-> term_getline(buf, lnum) =~ "done" || term_getline(buf, lnum - 1) =~ "done"}, 3000)
+  let line = term_getline(buf, lnum)
   if line !~ 'done'
-    let line = term_getline(g:buf, g:lnum - 1)
+    let line = term_getline(buf, lnum - 1)
   endif
   call assert_match('done', line)
 
-  let g:job = term_getjob(g:buf)
-  call Stop_shell_in_terminal(g:buf)
-  call term_wait(g:buf)
-  unlet g:buf
+  let g:job = term_getjob(buf)
+  call Stop_shell_in_terminal(buf)
+  call term_wait(buf)
   unlet g:job
-  unlet g:lnum
   bwipe
 endfunc
 
@@ -705,7 +705,7 @@ func Test_terminal_composing_unicode()
 
   enew
   let buf = term_start(cmd, {'curwin': bufnr('')})
-  let job = term_getjob(buf)
+  let g:job = term_getjob(buf)
   call term_wait(buf, 50)
 
   " ascii + composing
@@ -742,8 +742,9 @@ func Test_terminal_composing_unicode()
   call assert_equal("\u00a0\u0308", l[3].chars)
 
   call term_sendkeys(buf, "exit\r")
-  call WaitFor('job_status(job) == "dead"')
-  call assert_equal('dead', job_status(job))
+  call WaitFor('job_status(g:job) == "dead"')
+  call assert_equal('dead', job_status(g:job))
   bwipe!
+  unlet g:job
   let &encoding = save_enc
 endfunc
