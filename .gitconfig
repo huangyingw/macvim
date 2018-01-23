@@ -20,3 +20,5 @@
     ignore = prunefile.conf
     ignore = src/MacVim/mvim 
     ignore = src/window.c
+[commit]
+	message = n
