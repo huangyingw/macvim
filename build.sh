@@ -5,9 +5,20 @@ cd "$SCRIPTPATH"
 
 cd src/
 
-xcode-select --install \
-    ; brew reinstall python --framework \
-    && ./configure --with-features=huge --enable-multibyte --with-macarchs=x86_64 --enable-perlinterp --enable-rubyinterp --enable-tclinterp --with-tlib=ncurses --with-local-dir=/usr/local --enable-cscope --enable-pythoninterp --enable-python3interp \
+xcode-select --install
+brew reinstall python --framework
+./configure \
+    --enable-cscope \
+    --enable-multibyte \
+    --enable-perlinterp \
+    --enable-pythoninterp \
+    --enable-rubyinterp \
+    --enable-tclinterp \
+    --enable-terminal \
+    --with-features=huge \
+    --with-macarchs=x86_64 \
+    --with-python-config-dir=/usr/bin/python-config \
+    --with-tlib=ncurses \
     && make \
     && cd - \
     && ~/loadrc/gitrc/gci.sh \
