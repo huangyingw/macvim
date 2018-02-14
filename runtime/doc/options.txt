@@ -1,4 +1,4 @@
-*options.txt*	For Vim version 8.0.  Last change: 2017 Dec 21
+*options.txt*	For Vim version 8.0.  Last change: 2018 Feb 03
 
 
 		  VIM REFERENCE MANUAL	  by Bram Moolenaar
@@ -6114,6 +6114,16 @@ A jump table for the options with a short description can be found at |Q_op|.
 			{not in Vi}
 	Determines the maximum number of items to show in the popup menu for
 	Insert mode completion.  When zero as much space as available is used.
+	|ins-completion-menu|.
+
+						*'pumwidth'* *'pw'*
+'pumwidth' 'pw'		number	(default 0)
+			global
+			{not available when compiled without the
+			|+insert_expand| feature}
+			{not in Vi}
+	Determines the minium width to use for the popup menu for Insert mode
+	completion.  When zero the default of 15 screen cells is used.
 	|ins-completion-menu|.
 
 						*'pythondll'*

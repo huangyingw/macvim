@@ -1116,6 +1116,10 @@ free_all_mem(void)
     spell_free_all();
 # endif
 
+#if defined(FEAT_INS_EXPAND) && defined(FEAT_BEVAL_TERM)
+    ui_remove_balloon();
+# endif
+
 # if defined(FEAT_USR_CMDS)
     /* Clear user commands (before deleting buffers). */
     ex_comclear(NULL);
@@ -1823,6 +1827,8 @@ copy_option_part(
  * Replacement for free() that ignores NULL pointers.
  * Also skip free() when exiting for sure, this helps when we caught a deadly
  * signal that was caused by a crash in free().
+ * If you want to set NULL after calling this function, you should use
+ * VIM_CLEAR() instead.
  */
     void
 vim_free(void *x)
@@ -5179,8 +5185,8 @@ ff_wc_equal(char_u *s1, char_u *s2)
 	prev2 = prev1;
 	prev1 = c1;
 
-        i += MB_PTR2LEN(s1 + i);
-        j += MB_PTR2LEN(s2 + j);
+	i += MB_PTR2LEN(s1 + i);
+	j += MB_PTR2LEN(s2 + j);
     }
     return s1[i] == s2[j];
 }
@@ -5898,7 +5904,7 @@ pathcmp(const char *p, const char *q, int maxlen)
 	    if (c2 == NUL)  /* full match */
 		return 0;
 	    s = q;
-            i = j;
+	    i = j;
 	    break;
 	}
 
