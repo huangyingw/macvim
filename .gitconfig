@@ -18,7 +18,13 @@
     ignore = .gitignore
     ignore = build.sh
     ignore = prunefile.conf
-    ignore = src/MacVim/mvim 
+    ignore = src/MacVim/mvim
     ignore = src/window.c
 [commit]
-	message = n
+    message = n
+[branch "dev.fix"]
+    remote = origin
+    merge = refs/heads/dev.fix
+[branch "python3/dev.fix"]
+    remote = origin
+    merge = refs/heads/python3/dev.fix
