@@ -475,9 +475,12 @@ term_start(typval_T *argvar, jobopt_T *opt, int forceit)
 	channel_set_nonblock(term->tl_job->jv_channel, PART_IN);
 
 #ifdef FEAT_AUTOCMD
-	++curbuf->b_locked;
-	apply_autocmds(EVENT_BUFWINENTER, NULL, NULL, FALSE, curbuf);
-	--curbuf->b_locked;
+	if (!opt->jo_hidden)
+	{
+	    ++curbuf->b_locked;
+	    apply_autocmds(EVENT_BUFWINENTER, NULL, NULL, FALSE, curbuf);
+	    --curbuf->b_locked;
+	}
 #endif
 
 	if (old_curbuf != NULL)
@@ -523,7 +526,7 @@ ex_terminal(exarg_T *eap)
     init_job_options(&opt);
 
     cmd = eap->arg;
-    while (*cmd && *cmd == '+' && *(cmd + 1) == '+')
+    while (*cmd == '+' && *(cmd + 1) == '+')
     {
 	char_u  *p, *ep;
 
@@ -1181,8 +1184,7 @@ move_terminal_to_buffer(term_T *term)
 set_terminal_mode(term_T *term, int normal_mode)
 {
     term->tl_normal_mode = normal_mode;
-    vim_free(term->tl_status_text);
-    term->tl_status_text = NULL;
+    VIM_CLEAR(term->tl_status_text);
     if (term->tl_buffer == curbuf)
 	maketitle();
 }
@@ -1744,10 +1746,8 @@ term_job_ended(job_T *job)
     for (term = first_term; term != NULL; term = term->tl_next)
 	if (term->tl_job == job)
 	{
-	    vim_free(term->tl_title);
-	    term->tl_title = NULL;
-	    vim_free(term->tl_status_text);
-	    term->tl_status_text = NULL;
+	    VIM_CLEAR(term->tl_title);
+	    VIM_CLEAR(term->tl_status_text);
 	    redraw_buf_and_status_later(term->tl_buffer, VALID);
 	    did_one = TRUE;
 	}
@@ -2028,8 +2028,7 @@ handle_settermprop(
 #endif
 	    else
 		term->tl_title = vim_strsave((char_u *)value->string);
-	    vim_free(term->tl_status_text);
-	    term->tl_status_text = NULL;
+	    VIM_CLEAR(term->tl_status_text);
 	    if (term == curbuf->b_term)
 		maketitle();
 	    break;
@@ -2194,10 +2193,8 @@ term_channel_closed(channel_T *ch)
 	    term->tl_channel_closed = TRUE;
 	    did_one = TRUE;
 
-	    vim_free(term->tl_title);
-	    term->tl_title = NULL;
-	    vim_free(term->tl_status_text);
-	    term->tl_status_text = NULL;
+	    VIM_CLEAR(term->tl_title);
+	    VIM_CLEAR(term->tl_status_text);
 
 	    /* Unless in Terminal-Normal mode: clear the vterm. */
 	    if (!term->tl_normal_mode)
@@ -2406,8 +2403,8 @@ term_update_window(win_T *wp)
 	else
 	    pos.col = 0;
 
-	screen_line(wp->w_winrow + pos.row, wp->w_wincol,
-						  pos.col, wp->w_width, FALSE);
+	screen_line(wp->w_winrow + pos.row + winbar_height(wp),
+				    wp->w_wincol, pos.col, wp->w_width, FALSE);
     }
     term->tl_dirty_row_start = MAX_ROW;
     term->tl_dirty_row_end = 0;
@@ -3164,6 +3161,8 @@ f_term_scrape(typval_T *argvars, typval_T *rettv)
 	    bg = cell.bg;
 	}
 	dcell = dict_alloc();
+	if (dcell == NULL)
+	    break;
 	list_append_dict(l, dcell);
 
 	dict_add_nr_str(dcell, "chars", 0, mbs);
@@ -3264,8 +3263,7 @@ f_term_wait(typval_T *argvars, typval_T *rettv UNUSED)
 	return;
 
     /* Get the job status, this will detect a job that finished. */
-    if ((buf->b_term->tl_job->jv_channel == NULL
-			     || !buf->b_term->tl_job->jv_channel->ch_keep_open)
+    if (!buf->b_term->tl_job->jv_channel->ch_keep_open
 	    && STRCMP(job_status(buf->b_term->tl_job), "dead") == 0)
     {
 	/* The job is dead, keep reading channel I/O until the channel is

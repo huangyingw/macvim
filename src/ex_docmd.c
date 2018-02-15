@@ -201,9 +201,6 @@ static void	ex_wrongmodifier(exarg_T *eap);
 static void	ex_find(exarg_T *eap);
 static void	ex_open(exarg_T *eap);
 static void	ex_edit(exarg_T *eap);
-#if !defined(FEAT_GUI) && !defined(FEAT_CLIENTSERVER)
-# define ex_drop		ex_ni
-#endif
 #ifndef FEAT_GUI
 # define ex_gui			ex_nogui
 static void	ex_nogui(exarg_T *eap);
@@ -875,8 +872,7 @@ do_cmdline(
 	{
 	    /* Each '|' separated command is stored separately in lines_ga, to
 	     * be able to jump to it.  Don't use next_cmdline now. */
-	    vim_free(cmdline_copy);
-	    cmdline_copy = NULL;
+	    VIM_CLEAR(cmdline_copy);
 
 	    /* Check if a function has returned or, unless it has an unclosed
 	     * try conditional, aborted. */
@@ -1091,8 +1087,7 @@ do_cmdline(
 
 	if (next_cmdline == NULL)
 	{
-	    vim_free(cmdline_copy);
-	    cmdline_copy = NULL;
+	    VIM_CLEAR(cmdline_copy);
 #ifdef FEAT_CMDHIST
 	    /*
 	     * If the command was typed, remember it for the ':' register.
@@ -1181,6 +1176,13 @@ do_cmdline(
 		cstack.cs_lflags &= ~CSL_HAD_LOOP;
 		cstack.cs_line[cstack.cs_idx] = current_line - 1;
 	    }
+	}
+
+	/* Check for the next breakpoint after a watchexpression */
+	if (breakpoint != NULL && has_watchexpr())
+	{
+	    *breakpoint = dbg_find_breakpoint(FALSE, fname, sourcing_lnum);
+	    *dbg_tick = debug_tick;
 	}
 
 	/*
@@ -2885,8 +2887,18 @@ do_one_cmd(
     }
 #endif
 
+    /* The :try command saves the emsg_silent flag, reset it here when
+     * ":silent! try" was used, it should only apply to :try itself. */
+    if (ea.cmdidx == CMD_try && did_esilent > 0)
+    {
+	emsg_silent -= did_esilent;
+	if (emsg_silent < 0)
+	    emsg_silent = 0;
+	did_esilent = 0;
+    }
+
 /*
- * 7. Switch on command name.
+ * 7. Execute the command.
  *
  * The "ea" structure holds the arguments that can be used.
  */
@@ -5819,11 +5831,9 @@ uc_add_command(
 		goto fail;
 	    }
 
-	    vim_free(cmd->uc_rep);
-	    cmd->uc_rep = NULL;
+	    VIM_CLEAR(cmd->uc_rep);
 #if defined(FEAT_EVAL) && defined(FEAT_CMDL_COMPL)
-	    vim_free(cmd->uc_compl_arg);
-	    cmd->uc_compl_arg = NULL;
+	    VIM_CLEAR(cmd->uc_compl_arg);
 #endif
 	    break;
 	}
@@ -8076,6 +8086,16 @@ alist_set(
     int		fnum_len)
 {
     int		i;
+    static int  recursive = 0;
+
+    if (recursive)
+    {
+#ifdef FEAT_AUTOCMD
+	EMSG(_(e_au_recursive));
+#endif
+	return;
+    }
+    ++recursive;
 
     alist_clear(al);
     if (ga_grow(&al->al_ga, count) == OK)
@@ -8105,6 +8125,8 @@ alist_set(
 	FreeWild(count, files);
     if (al == &global_alist)
 	arg_had_last = FALSE;
+
+    --recursive;
 }
 
 /*
@@ -8959,11 +8981,8 @@ static char_u	*prev_dir = NULL;
     void
 free_cd_dir(void)
 {
-    vim_free(prev_dir);
-    prev_dir = NULL;
-
-    vim_free(globaldir);
-    globaldir = NULL;
+    VIM_CLEAR(prev_dir);
+    VIM_CLEAR(globaldir);
 }
 #endif
 
@@ -8974,8 +8993,7 @@ free_cd_dir(void)
     void
 post_chdir(int local)
 {
-    vim_free(curwin->w_localdir);
-    curwin->w_localdir = NULL;
+    VIM_CLEAR(curwin->w_localdir);
     if (local)
     {
 	/* If still in global directory, need to remember current
@@ -8990,8 +9008,7 @@ post_chdir(int local)
     {
 	/* We are now in the global directory, no need to remember its
 	 * name. */
-	vim_free(globaldir);
-	globaldir = NULL;
+	VIM_CLEAR(globaldir);
     }
 
     shorten_fnames(TRUE);
