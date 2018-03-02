@@ -5,9 +5,7 @@ if !has("syntax")
 endif
 
 source view_util.vim
-if has('terminal')
-  source screendump.vim
-endif
+source screendump.vim
 
 func GetSyntaxItem(pat)
   let c = ''
@@ -428,6 +426,8 @@ func Test_bg_detection()
   set bg=dark
   hi Normal ctermbg=12
   call assert_equal('dark', &bg)
+
+  hi Normal ctermbg=NONE
 endfunc
 
 func Test_syntax_hangs()
@@ -526,8 +526,7 @@ endfunc
 
 " Check highlighting for a small piece of C code with a screen dump.
 func Test_syntax_c()
-  " Need to be able to run terminal Vim with 256 colors.
-  if !has('terminal') || has('win32')
+  if !CanRunVimInTerminal()
     return
   endif
   call writefile([
@@ -551,9 +550,15 @@ func Test_syntax_c()
 	\ '  }',
 	\ '}',
 	\ ], 'Xtest.c')
+ 
+  " This makes the default for 'background' use "dark", check that the
+  " response to t_RB corrects it to "light".
+  let $COLORFGBG = '15;0'
+
   let buf = RunVimInTerminal('Xtest.c', {})
-  call VerifyScreenDump(buf, 'Test_syntax_c_01')
+  call VerifyScreenDump(buf, 'Test_syntax_c_01', {})
   call StopVimInTerminal(buf)
 
+  let $COLORFGBG = ''
   call delete('Xtest.c')
 endfun
