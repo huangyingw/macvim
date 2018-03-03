@@ -181,6 +181,7 @@ EXTERN dict_T	globvardict;		    /* Dictionary with g: variables */
 EXTERN int	did_emsg;		    /* set by emsg() when the message
 					       is displayed or thrown */
 #ifdef FEAT_EVAL
+EXTERN int	called_vim_beep;	    /* set if vim_beep() is called */
 EXTERN int	did_uncaught_emsg;	    /* emsg() was called and did not
 					       cause an exception */
 #endif
@@ -1087,8 +1088,6 @@ EXTERN pos_T	last_cursormoved	      /* for CursorMoved event */
 			= INIT_POS_T(0, 0, 0)
 # endif
 			;
-EXTERN varnumber_T last_changedtick INIT(= 0);   /* for TextChanged event */
-EXTERN buf_T	*last_changedtick_buf INIT(= NULL);
 #endif
 
 EXTERN int	postponed_split INIT(= 0);  /* for CTRL-W CTRL-] command */
@@ -1443,6 +1442,8 @@ EXTERN char_u e_interr[]	INIT(= N_("Interrupted"));
 EXTERN char_u e_invaddr[]	INIT(= N_("E14: Invalid address"));
 EXTERN char_u e_invarg[]	INIT(= N_("E474: Invalid argument"));
 EXTERN char_u e_invarg2[]	INIT(= N_("E475: Invalid argument: %s"));
+EXTERN char_u e_invargval[]	INIT(= N_("E475: Invalid value for argument %s"));
+EXTERN char_u e_invargNval[]	INIT(= N_("E475: Invalid value for argument %s: %s"));
 #ifdef FEAT_EVAL
 EXTERN char_u e_invexpr2[]	INIT(= N_("E15: Invalid expression: %s"));
 #endif

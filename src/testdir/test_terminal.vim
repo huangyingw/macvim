@@ -717,6 +717,15 @@ func Test_terminal_wall()
   unlet g:job
 endfunc
 
+func Test_terminal_wqall()
+  let buf = Run_shell_in_terminal({})
+  call assert_fails('wqall', 'E948')
+  call Stop_shell_in_terminal(buf)
+  call term_wait(buf)
+  exe buf . 'bwipe'
+  unlet g:job
+endfunc
+
 func Test_terminal_composing_unicode()
   let save_enc = &encoding
   set encoding=utf-8
@@ -802,6 +811,11 @@ func Test_terminal_aucmd_on_close()
 endfunc
 
 func Test_terminal_term_start_empty_command()
+  " Workaround: ignore "No Menu" error
+  if has('gui_macvim') && has('gui_running')
+    call test_ignore_error('E329')
+  endif
+
   let cmd = "call term_start('', {'curwin' : 1, 'term_finish' : 'close'})"
   call assert_fails(cmd, 'E474')
   let cmd = "call term_start('', {'curwin' : 1, 'term_finish' : 'close'})"

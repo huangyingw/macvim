@@ -145,30 +145,32 @@ static char *(spo_name_tab[SPO_COUNT]) =
  *
  * A character offset can be given for the matched text (_m_start and _m_end)
  * and for the actually highlighted text (_h_start and _h_end).
+ *
+ * Note that ordering of members is optimized to reduce padding.
  */
 typedef struct syn_pattern
 {
     char	 sp_type;		/* see SPTYPE_ defines below */
     char	 sp_syncing;		/* this item used for syncing */
+    short	 sp_syn_match_id;	/* highlight group ID of pattern */
+    short	 sp_off_flags;		/* see below */
+    int		 sp_offsets[SPO_COUNT];	/* offsets */
     int		 sp_flags;		/* see HL_ defines below */
 #ifdef FEAT_CONCEAL
     int		 sp_cchar;		/* conceal substitute character */
 #endif
+    int		 sp_ic;			/* ignore-case flag for sp_prog */
+    int		 sp_sync_idx;		/* sync item index (syncing only) */
+    int		 sp_line_id;		/* ID of last line where tried */
+    int		 sp_startcol;		/* next match in sp_line_id line */
+    short	*sp_cont_list;		/* cont. group IDs, if non-zero */
+    short	*sp_next_list;		/* next group IDs, if non-zero */
     struct sp_syn sp_syn;		/* struct passed to in_id_list() */
-    short	 sp_syn_match_id;	/* highlight group ID of pattern */
     char_u	*sp_pattern;		/* regexp to match, pattern */
     regprog_T	*sp_prog;		/* regexp to match, program */
 #ifdef FEAT_PROFILE
     syn_time_T	 sp_time;
 #endif
-    int		 sp_ic;			/* ignore-case flag for sp_prog */
-    short	 sp_off_flags;		/* see below */
-    int		 sp_offsets[SPO_COUNT];	/* offsets */
-    short	*sp_cont_list;		/* cont. group IDs, if non-zero */
-    short	*sp_next_list;		/* next group IDs, if non-zero */
-    int		 sp_sync_idx;		/* sync item index (syncing only) */
-    int		 sp_line_id;		/* ID of last line where tried */
-    int		 sp_startcol;		/* next match in sp_line_id line */
 } synpat_T;
 
 /* The sp_off_flags are computed like this:
@@ -1189,8 +1191,7 @@ syn_stack_free_block(synblock_T *block)
     {
 	for (p = block->b_sst_first; p != NULL; p = p->sst_next)
 	    clear_syn_state(p);
-	vim_free(block->b_sst_array);
-	block->b_sst_array = NULL;
+	VIM_CLEAR(block->b_sst_array);
 	block->b_sst_len = 0;
     }
 }
@@ -2134,7 +2135,7 @@ syn_current_attr(
 			    r = syn_regexec(&regmatch,
 					     current_lnum,
 					     (colnr_T)lc_col,
-				             IF_SYN_TIME(&spp->sp_time));
+					     IF_SYN_TIME(&spp->sp_time));
 			    spp->sp_prog = regmatch.regprog;
 			    if (!r)
 			    {
@@ -3641,8 +3642,7 @@ syntax_clear(synblock_T *block)
 
     vim_regfree(block->b_syn_linecont_prog);
     block->b_syn_linecont_prog = NULL;
-    vim_free(block->b_syn_linecont_pat);
-    block->b_syn_linecont_pat = NULL;
+    VIM_CLEAR(block->b_syn_linecont_pat);
 #ifdef FEAT_FOLDING
     block->b_syn_folditems = 0;
 #endif
@@ -3690,8 +3690,7 @@ syntax_sync_clear(void)
 
     vim_regfree(curwin->w_s->b_syn_linecont_prog);
     curwin->w_s->b_syn_linecont_prog = NULL;
-    vim_free(curwin->w_s->b_syn_linecont_pat);
-    curwin->w_s->b_syn_linecont_pat = NULL;
+    VIM_CLEAR(curwin->w_s->b_syn_linecont_pat);
     clear_string_option(&curwin->w_s->b_syn_isk);
 
     syn_stack_free_all(curwin->w_s);	/* Need to recompute all syntax. */
@@ -3810,8 +3809,7 @@ syn_cmd_clear(exarg_T *eap, int syncing)
 		     */
 		    short scl_id = id - SYNID_CLUSTER;
 
-		    vim_free(SYN_CLSTR(curwin->w_s)[scl_id].scl_list);
-		    SYN_CLSTR(curwin->w_s)[scl_id].scl_list = NULL;
+		    VIM_CLEAR(SYN_CLSTR(curwin->w_s)[scl_id].scl_list);
 		}
 	    }
 	    else
@@ -5954,8 +5952,7 @@ syn_cmd_sync(exarg_T *eap, int syncing UNUSED)
 
 		if (curwin->w_s->b_syn_linecont_prog == NULL)
 		{
-		    vim_free(curwin->w_s->b_syn_linecont_pat);
-		    curwin->w_s->b_syn_linecont_pat = NULL;
+		    VIM_CLEAR(curwin->w_s->b_syn_linecont_pat);
 		    finished = TRUE;
 		    break;
 		}
@@ -6819,7 +6816,6 @@ syntime_report(void)
     MSG_PUTS("\n");
     for (idx = 0; idx < ga.ga_len && !got_int; ++idx)
     {
-	spp = &(SYN_ITEMS(curwin->w_s)[idx]);
 	p = ((time_entry_T *)ga.ga_data) + idx;
 
 	MSG_PUTS(profile_msg(&p->total));
@@ -8370,10 +8366,8 @@ highlight_clear(int idx)
     HL_TABLE()[idx].sg_cleared = TRUE;
 
     HL_TABLE()[idx].sg_term = 0;
-    vim_free(HL_TABLE()[idx].sg_start);
-    HL_TABLE()[idx].sg_start = NULL;
-    vim_free(HL_TABLE()[idx].sg_stop);
-    HL_TABLE()[idx].sg_stop = NULL;
+    VIM_CLEAR(HL_TABLE()[idx].sg_start);
+    VIM_CLEAR(HL_TABLE()[idx].sg_stop);
     HL_TABLE()[idx].sg_term_attr = 0;
     HL_TABLE()[idx].sg_cterm = 0;
     HL_TABLE()[idx].sg_cterm_bold = FALSE;
@@ -8382,12 +8376,9 @@ highlight_clear(int idx)
     HL_TABLE()[idx].sg_cterm_attr = 0;
 #if defined(FEAT_GUI) || defined(FEAT_EVAL)
     HL_TABLE()[idx].sg_gui = 0;
-    vim_free(HL_TABLE()[idx].sg_gui_fg_name);
-    HL_TABLE()[idx].sg_gui_fg_name = NULL;
-    vim_free(HL_TABLE()[idx].sg_gui_bg_name);
-    HL_TABLE()[idx].sg_gui_bg_name = NULL;
-    vim_free(HL_TABLE()[idx].sg_gui_sp_name);
-    HL_TABLE()[idx].sg_gui_sp_name = NULL;
+    VIM_CLEAR(HL_TABLE()[idx].sg_gui_fg_name);
+    VIM_CLEAR(HL_TABLE()[idx].sg_gui_bg_name);
+    VIM_CLEAR(HL_TABLE()[idx].sg_gui_sp_name);
 #endif
 #if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
     HL_TABLE()[idx].sg_gui_fg = INVALCOLOR;
@@ -8401,8 +8392,7 @@ highlight_clear(int idx)
     gui_mch_free_fontset(HL_TABLE()[idx].sg_fontset);
     HL_TABLE()[idx].sg_fontset = NOFONTSET;
 # endif
-    vim_free(HL_TABLE()[idx].sg_font_name);
-    HL_TABLE()[idx].sg_font_name = NULL;
+    VIM_CLEAR(HL_TABLE()[idx].sg_font_name);
     HL_TABLE()[idx].sg_gui_attr = 0;
 #endif
 #ifdef FEAT_EVAL
@@ -8422,10 +8412,10 @@ highlight_clear(int idx)
     void
 set_normal_colors(void)
 {
-#ifdef FEAT_GUI
-# ifdef FEAT_TERMGUICOLORS
+# ifdef FEAT_GUI
+#  ifdef FEAT_TERMGUICOLORS
     if (gui.in_use)
-# endif
+#  endif
     {
 	if (set_group_colors((char_u *)"Normal",
 				 &gui.norm_pixel, &gui.back_pixel,
@@ -8434,27 +8424,27 @@ set_normal_colors(void)
 	    gui_mch_new_colors();
 	    must_redraw = CLEAR;
 	}
-# ifdef FEAT_GUI_X11
+#  ifdef FEAT_GUI_X11
 	if (set_group_colors((char_u *)"Menu",
 			     &gui.menu_fg_pixel, &gui.menu_bg_pixel,
 			     TRUE, FALSE, FALSE))
 	{
-#  ifdef FEAT_MENU
+#   ifdef FEAT_MENU
 	    gui_mch_new_menu_colors();
-#  endif
+#   endif
 	    must_redraw = CLEAR;
 	}
-#  ifdef FEAT_BEVAL_GUI
+#   ifdef FEAT_BEVAL_GUI
 	if (set_group_colors((char_u *)"Tooltip",
 			     &gui.tooltip_fg_pixel, &gui.tooltip_bg_pixel,
 			     FALSE, FALSE, TRUE))
 	{
-#   ifdef FEAT_TOOLBAR
+#    ifdef FEAT_TOOLBAR
 	    gui_mch_new_tooltip_colors();
-#   endif
+#    endif
 	    must_redraw = CLEAR;
 	}
-#  endif
+#   endif
 	if (set_group_colors((char_u *)"Scrollbar",
 			&gui.scroll_fg_pixel, &gui.scroll_bg_pixel,
 			FALSE, FALSE, FALSE))
@@ -8462,13 +8452,13 @@ set_normal_colors(void)
 	    gui_new_scrollbar_colors();
 	    must_redraw = CLEAR;
 	}
-# endif
+#  endif
     }
-#endif
-#ifdef FEAT_TERMGUICOLORS
-# ifdef FEAT_GUI
-    else
 # endif
+# ifdef FEAT_TERMGUICOLORS
+#  ifdef FEAT_GUI
+    else
+#  endif
     {
 	int		idx;
 
@@ -8477,19 +8467,20 @@ set_normal_colors(void)
 	{
 	    gui_do_one_color(idx, FALSE, FALSE);
 
-	    if (HL_TABLE()[idx].sg_gui_fg != INVALCOLOR)
+	    /* If the normal fg or bg color changed a complete redraw is
+	     * required. */
+	    if (cterm_normal_fg_gui_color != HL_TABLE()[idx].sg_gui_fg
+		    || cterm_normal_bg_gui_color != HL_TABLE()[idx].sg_gui_bg)
 	    {
+		/* if the GUI color is INVALCOLOR then we use the default cterm
+		 * color */
 		cterm_normal_fg_gui_color = HL_TABLE()[idx].sg_gui_fg;
-		must_redraw = CLEAR;
-	    }
-	    if (HL_TABLE()[idx].sg_gui_bg != INVALCOLOR)
-	    {
 		cterm_normal_bg_gui_color = HL_TABLE()[idx].sg_gui_bg;
 		must_redraw = CLEAR;
 	    }
 	}
     }
-#endif
+# endif
 }
 #endif
 
@@ -8940,6 +8931,10 @@ get_cterm_attr_idx(int attr, int fg, int bg)
     attrentry_T		at_en;
 
     vim_memset(&at_en, 0, sizeof(attrentry_T));
+#ifdef FEAT_TERMGUICOLORS
+    at_en.ae_u.cterm.fg_rgb = INVALCOLOR;
+    at_en.ae_u.cterm.bg_rgb = INVALCOLOR;
+#endif
     at_en.ae_attr = attr;
     at_en.ae_u.cterm.fg_color = fg;
     at_en.ae_u.cterm.bg_color = bg;
@@ -8958,8 +8953,18 @@ get_tgc_attr_idx(int attr, guicolor_T fg, guicolor_T bg)
 
     vim_memset(&at_en, 0, sizeof(attrentry_T));
     at_en.ae_attr = attr;
-    at_en.ae_u.cterm.fg_rgb = fg;
-    at_en.ae_u.cterm.bg_rgb = bg;
+    if (fg == INVALCOLOR && bg == INVALCOLOR)
+    {
+	/* If both GUI colors are not set fall back to the cterm colors.  Helps
+	 * if the GUI only has an attribute, such as undercurl. */
+	at_en.ae_u.cterm.fg_rgb = CTERMCOLOR;
+	at_en.ae_u.cterm.bg_rgb = CTERMCOLOR;
+    }
+    else
+    {
+	at_en.ae_u.cterm.fg_rgb = fg;
+	at_en.ae_u.cterm.bg_rgb = bg;
+    }
     return get_attr_entry(&cterm_attr_table, &at_en);
 }
 #endif
@@ -9100,10 +9105,23 @@ hl_combine_attr(int char_attr, int prim_attr)
 		if (spell_aep->ae_u.cterm.bg_color > 0)
 		    new_en.ae_u.cterm.bg_color = spell_aep->ae_u.cterm.bg_color;
 #ifdef FEAT_TERMGUICOLORS
-		if (spell_aep->ae_u.cterm.fg_rgb != INVALCOLOR)
-		    new_en.ae_u.cterm.fg_rgb = spell_aep->ae_u.cterm.fg_rgb;
-		if (spell_aep->ae_u.cterm.bg_rgb != INVALCOLOR)
-		    new_en.ae_u.cterm.bg_rgb = spell_aep->ae_u.cterm.bg_rgb;
+		/* If both fg and bg are not set fall back to cterm colors.
+		 * Helps for SpellBad which uses undercurl in the GUI. */
+		if (COLOR_INVALID(spell_aep->ae_u.cterm.fg_rgb)
+			&& COLOR_INVALID(spell_aep->ae_u.cterm.bg_rgb))
+		{
+		    if (spell_aep->ae_u.cterm.fg_color > 0)
+			new_en.ae_u.cterm.fg_rgb = CTERMCOLOR;
+		    if (spell_aep->ae_u.cterm.bg_color > 0)
+			new_en.ae_u.cterm.bg_rgb = CTERMCOLOR;
+		}
+		else
+		{
+		    if (spell_aep->ae_u.cterm.fg_rgb != INVALCOLOR)
+			new_en.ae_u.cterm.fg_rgb = spell_aep->ae_u.cterm.fg_rgb;
+		    if (spell_aep->ae_u.cterm.bg_rgb != INVALCOLOR)
+			new_en.ae_u.cterm.bg_rgb = spell_aep->ae_u.cterm.bg_rgb;
+		}
 #endif
 	    }
 	}
@@ -9579,8 +9597,33 @@ set_hl_attr(
 	at_en.ae_u.cterm.fg_color = sgp->sg_cterm_fg;
 	at_en.ae_u.cterm.bg_color = sgp->sg_cterm_bg;
 # ifdef FEAT_TERMGUICOLORS
+#  ifdef WIN3264
+	{
+	    int id;
+	    guicolor_T fg, bg;
+
+	    id = syn_name2id((char_u *)"Normal");
+	    if (id > 0)
+	    {
+		syn_id2colors(id, &fg, &bg);
+		if (sgp->sg_gui_fg == INVALCOLOR)
+		    sgp->sg_gui_fg = fg;
+		if (sgp->sg_gui_bg == INVALCOLOR)
+		    sgp->sg_gui_bg = bg;
+	    }
+
+	}
+#  endif
 	at_en.ae_u.cterm.fg_rgb = GUI_MCH_GET_RGB2(sgp->sg_gui_fg);
 	at_en.ae_u.cterm.bg_rgb = GUI_MCH_GET_RGB2(sgp->sg_gui_bg);
+	if (at_en.ae_u.cterm.fg_rgb == INVALCOLOR
+		&& at_en.ae_u.cterm.bg_rgb == INVALCOLOR)
+	{
+	    /* If both fg and bg are invalid fall back to the cterm colors.
+	     * Helps when the GUI only uses an attribute, e.g. undercurl. */
+	    at_en.ae_u.cterm.fg_rgb = CTERMCOLOR;
+	    at_en.ae_u.cterm.bg_rgb = CTERMCOLOR;
+	}
 # endif
 	sgp->sg_cterm_attr = get_attr_entry(&cterm_attr_table, &at_en);
     }
@@ -9857,9 +9900,10 @@ syn_get_final_id(int hl_id)
     return hl_id;
 }
 
-#if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
+#if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS) || defined(PROTO)
 /*
  * Call this function just after the GUI has started.
+ * Also called when 'termguicolors' was set, gui.in_use will be FALSE then.
  * It finds the font and color handles for the highlighting groups.
  */
     void
@@ -9868,12 +9912,8 @@ highlight_gui_started(void)
     int	    idx;
 
     /* First get the colors from the "Normal" and "Menu" group, if set */
-# if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
-#  ifdef FEAT_TERMGUICOLORS
     if (USE_24BIT)
-#  endif
 	set_normal_colors();
-# endif
 
     for (idx = 0; idx < highlight_ga.ga_len; ++idx)
 	gui_do_one_color(idx, FALSE, FALSE);

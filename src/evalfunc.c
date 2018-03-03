@@ -44,7 +44,9 @@ static void f_argc(typval_T *argvars, typval_T *rettv);
 static void f_argidx(typval_T *argvars, typval_T *rettv);
 static void f_arglistid(typval_T *argvars, typval_T *rettv);
 static void f_argv(typval_T *argvars, typval_T *rettv);
+static void f_assert_beeps(typval_T *argvars, typval_T *rettv);
 static void f_assert_equal(typval_T *argvars, typval_T *rettv);
+static void f_assert_equalfile(typval_T *argvars, typval_T *rettv);
 static void f_assert_exception(typval_T *argvars, typval_T *rettv);
 static void f_assert_fails(typval_T *argvars, typval_T *rettv);
 static void f_assert_false(typval_T *argvars, typval_T *rettv);
@@ -164,6 +166,7 @@ static void f_get(typval_T *argvars, typval_T *rettv);
 static void f_getbufinfo(typval_T *argvars, typval_T *rettv);
 static void f_getbufline(typval_T *argvars, typval_T *rettv);
 static void f_getbufvar(typval_T *argvars, typval_T *rettv);
+static void f_getchangelist(typval_T *argvars, typval_T *rettv);
 static void f_getchar(typval_T *argvars, typval_T *rettv);
 static void f_getcharmod(typval_T *argvars, typval_T *rettv);
 static void f_getcharsearch(typval_T *argvars, typval_T *rettv);
@@ -180,6 +183,7 @@ static void f_getfperm(typval_T *argvars, typval_T *rettv);
 static void f_getfsize(typval_T *argvars, typval_T *rettv);
 static void f_getftime(typval_T *argvars, typval_T *rettv);
 static void f_getftype(typval_T *argvars, typval_T *rettv);
+static void f_getjumplist(typval_T *argvars, typval_T *rettv);
 static void f_getline(typval_T *argvars, typval_T *rettv);
 static void f_getloclist(typval_T *argvars UNUSED, typval_T *rettv UNUSED);
 static void f_getmatches(typval_T *argvars, typval_T *rettv);
@@ -482,7 +486,9 @@ static struct fst
 #ifdef FEAT_FLOAT
     {"asin",		1, 1, f_asin},	/* WJMc */
 #endif
+    {"assert_beeps",	1, 2, f_assert_beeps},
     {"assert_equal",	2, 3, f_assert_equal},
+    {"assert_equalfile", 2, 2, f_assert_equalfile},
     {"assert_exception", 1, 2, f_assert_exception},
     {"assert_fails",	1, 2, f_assert_fails},
     {"assert_false",	1, 2, f_assert_false},
@@ -604,6 +610,7 @@ static struct fst
     {"getbufinfo",	0, 1, f_getbufinfo},
     {"getbufline",	2, 3, f_getbufline},
     {"getbufvar",	2, 3, f_getbufvar},
+    {"getchangelist",	1, 1, f_getchangelist},
     {"getchar",		0, 1, f_getchar},
     {"getcharmod",	0, 0, f_getcharmod},
     {"getcharsearch",	0, 0, f_getcharsearch},
@@ -621,6 +628,7 @@ static struct fst
     {"getfsize",	1, 1, f_getfsize},
     {"getftime",	1, 1, f_getftime},
     {"getftype",	1, 1, f_getftype},
+    {"getjumplist",	0, 2, f_getjumplist},
     {"getline",		1, 2, f_getline},
     {"getloclist",	1, 2, f_getloclist},
     {"getmatches",	0, 0, f_getmatches},
@@ -841,6 +849,9 @@ static struct fst
 #endif
     {"tempname",	0, 0, f_tempname},
 #ifdef FEAT_TERMINAL
+    {"term_dumpdiff",	2, 3, f_term_dumpdiff},
+    {"term_dumpload",	1, 2, f_term_dumpload},
+    {"term_dumpwrite",	2, 3, f_term_dumpwrite},
     {"term_getaltscreen", 1, 1, f_term_getaltscreen},
     {"term_getattr",	2, 2, f_term_getattr},
     {"term_getcursor",	1, 1, f_term_getcursor},
@@ -1273,12 +1284,30 @@ f_argv(typval_T *argvars, typval_T *rettv)
 }
 
 /*
+ * "assert_beeps(cmd [, error])" function
+ */
+    static void
+f_assert_beeps(typval_T *argvars, typval_T *rettv UNUSED)
+{
+    assert_beeps(argvars);
+}
+
+/*
  * "assert_equal(expected, actual[, msg])" function
  */
     static void
 f_assert_equal(typval_T *argvars, typval_T *rettv UNUSED)
 {
     assert_equal_common(argvars, ASSERT_EQUAL);
+}
+
+/*
+ * "assert_equalfile(fname-one, fname-two)" function
+ */
+    static void
+f_assert_equalfile(typval_T *argvars, typval_T *rettv UNUSED)
+{
+    assert_equalfile(argvars);
 }
 
 /*
@@ -2989,9 +3018,7 @@ f_exepath(typval_T *argvars, typval_T *rettv)
 f_exists(typval_T *argvars, typval_T *rettv)
 {
     char_u	*p;
-    char_u	*name;
     int		n = FALSE;
-    int		len = 0;
 
     p = get_tv_string(&argvars[0]);
     if (*p == '$')			/* environment variable */
@@ -3033,29 +3060,7 @@ f_exists(typval_T *argvars, typval_T *rettv)
     }
     else				/* internal variable */
     {
-	char_u	    *tofree;
-	typval_T    tv;
-
-	/* get_name_len() takes care of expanding curly braces */
-	name = p;
-	len = get_name_len(&p, &tofree, TRUE, FALSE);
-	if (len > 0)
-	{
-	    if (tofree != NULL)
-		name = tofree;
-	    n = (get_var_tv(name, len, &tv, NULL, FALSE, TRUE) == OK);
-	    if (n)
-	    {
-		/* handle d.key, l[idx], f(expr) */
-		n = (handle_subscript(&p, &tv, TRUE, FALSE) == OK);
-		if (n)
-		    clear_tv(&tv);
-	    }
-	}
-	if (*p != NUL)
-	    n = FALSE;
-
-	vim_free(tofree);
+	n = var_exists(p);
     }
 
     rettv->vval.v_number = n;
@@ -4358,6 +4363,61 @@ f_getbufvar(typval_T *argvars, typval_T *rettv)
 }
 
 /*
+ * "getchangelist()" function
+ */
+    static void
+f_getchangelist(typval_T *argvars, typval_T *rettv)
+{
+#ifdef FEAT_JUMPLIST
+    buf_T	*buf;
+    int		i;
+    list_T	*l;
+    dict_T	*d;
+#endif
+
+    if (rettv_list_alloc(rettv) != OK)
+	return;
+
+#ifdef FEAT_JUMPLIST
+    (void)get_tv_number(&argvars[0]);	    /* issue errmsg if type error */
+    ++emsg_off;
+    buf = get_buf_tv(&argvars[0], FALSE);
+    --emsg_off;
+    if (buf == NULL)
+	return;
+
+    l = list_alloc();
+    if (l == NULL)
+	return;
+
+    if (list_append_list(rettv->vval.v_list, l) == FAIL)
+	return;
+    /*
+     * The current window change list index tracks only the position in the
+     * current buffer change list. For other buffers, use the change list
+     * length as the current index.
+     */
+    list_append_number(rettv->vval.v_list,
+	    (varnumber_T)((buf == curwin->w_buffer)
+		? curwin->w_changelistidx : buf->b_changelistlen));
+
+    for (i = 0; i < buf->b_changelistlen; ++i)
+    {
+	if (buf->b_changelist[i].lnum == 0)
+	    continue;
+	if ((d = dict_alloc()) == NULL)
+	    return;
+	if (list_append_dict(l, d) == FAIL)
+	    return;
+	dict_add_nr_str(d, "lnum", (long)buf->b_changelist[i].lnum, NULL);
+	dict_add_nr_str(d, "col", (long)buf->b_changelist[i].col, NULL);
+# ifdef FEAT_VIRTUALEDIT
+	dict_add_nr_str(d, "coladd", (long)buf->b_changelist[i].coladd, NULL);
+# endif
+    }
+#endif
+}
+/*
  * "getchar()" function
  */
     static void
@@ -4845,6 +4905,60 @@ f_getftype(typval_T *argvars, typval_T *rettv)
 	type = vim_strsave((char_u *)t);
     }
     rettv->vval.v_string = type;
+}
+
+/*
+ * "getjumplist()" function
+ */
+    static void
+f_getjumplist(typval_T *argvars, typval_T *rettv)
+{
+#ifdef FEAT_JUMPLIST
+    win_T	*wp;
+    int		i;
+    list_T	*l;
+    dict_T	*d;
+#endif
+
+    if (rettv_list_alloc(rettv) != OK)
+	return;
+
+#ifdef FEAT_JUMPLIST
+    wp = find_tabwin(&argvars[0], &argvars[1]);
+    if (wp == NULL)
+	return;
+
+    l = list_alloc();
+    if (l == NULL)
+	return;
+
+    if (list_append_list(rettv->vval.v_list, l) == FAIL)
+	return;
+    list_append_number(rettv->vval.v_list, (varnumber_T)wp->w_jumplistidx);
+
+    cleanup_jumplist(wp, TRUE);
+
+    for (i = 0; i < wp->w_jumplistlen; ++i)
+    {
+	if (wp->w_jumplist[i].fmark.mark.lnum == 0)
+	    continue;
+	if ((d = dict_alloc()) == NULL)
+	    return;
+	if (list_append_dict(l, d) == FAIL)
+	    return;
+	dict_add_nr_str(d, "lnum", (long)wp->w_jumplist[i].fmark.mark.lnum,
+		NULL);
+	dict_add_nr_str(d, "col", (long)wp->w_jumplist[i].fmark.mark.col,
+		NULL);
+# ifdef FEAT_VIRTUALEDIT
+	dict_add_nr_str(d, "coladd", (long)wp->w_jumplist[i].fmark.mark.coladd,
+		NULL);
+# endif
+	dict_add_nr_str(d, "bufnr", (long)wp->w_jumplist[i].fmark.fnum, NULL);
+	if (wp->w_jumplist[i].fname != NULL)
+	    dict_add_nr_str(d, "filename", 0L, wp->w_jumplist[i].fname);
+    }
+#endif
 }
 
 /*
@@ -5619,11 +5733,11 @@ f_has(typval_T *argvars, typval_T *rettv)
 	"beos",
 #endif
 #ifdef MACOS_X
-       "mac",		/* Mac OS X (and, once, Mac OS Classic) */
-       "osx",		/* Mac OS X */
+	"mac",		/* Mac OS X (and, once, Mac OS Classic) */
+	"osx",		/* Mac OS X */
 # ifdef MACOS_X_DARWIN
-       "macunix",	/* Mac OS X, with the darwin feature */
-       "osxdarwin",	/* synonym for macunix */
+	"macunix",	/* Mac OS X, with the darwin feature */
+	"osxdarwin",	/* synonym for macunix */
 # endif
 #endif
 #ifdef __QNX__
@@ -6228,9 +6342,9 @@ f_has(typval_T *argvars, typval_T *rettv)
 	else if (STRICMP(name, "syntax_items") == 0)
 	    n = syntax_present(curwin);
 #endif
-#if defined(WIN3264)
-	else if (STRICMP(name, "win95") == 0)
-	    n = FALSE;		/* Win9x is no more supported. */
+#ifdef FEAT_VTP
+	else if (STRICMP(name, "vcon") == 0)
+	    n = has_vtp_working();
 #endif
 #ifdef FEAT_NETBEANS_INTG
 	else if (STRICMP(name, "netbeans_enabled") == 0)
@@ -9249,10 +9363,7 @@ f_resolve(typval_T *argvars, typval_T *rettv)
 	    if (*q != NUL)
 		STRMOVE(remain, q - 1);
 	    else
-	    {
-		vim_free(remain);
-		remain = NULL;
-	    }
+		VIM_CLEAR(remain);
 	}
 
 	/* If the result is a relative path name, make it explicitly relative to

@@ -2260,7 +2260,6 @@ utf_char2len(int c)
 /*
  * Convert Unicode character "c" to UTF-8 string in "buf[]".
  * Returns the number of bytes.
- * This does not include composing characters.
  */
     int
 utf_char2bytes(int c, char_u *buf)
@@ -4666,8 +4665,7 @@ iconv_string(
 	else if (ICONV_ERRNO != ICONV_E2BIG)
 	{
 	    /* conversion failed */
-	    vim_free(result);
-	    result = NULL;
+	    VIM_CLEAR(result);
 	    break;
 	}
 	/* Not enough room or skipping illegal sequence. */

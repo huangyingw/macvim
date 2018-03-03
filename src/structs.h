@@ -101,7 +101,10 @@ typedef struct {
 # endif
 # define guicolor_T long
 # define INVALCOLOR ((guicolor_T)0x1ffffff)
+    /* only used for cterm.bg_rgb and cterm.fg_rgb: use cterm color */
+# define CTERMCOLOR ((guicolor_T)0x1fffffe)
 #endif
+#define COLOR_INVALID(x) ((x) == INVALCOLOR || (x) == CTERMCOLOR)
 
 /*
  * marks: positions in a file
@@ -1986,6 +1989,15 @@ struct file_buffer
 				   incremented for each change, also for undo */
 #define CHANGEDTICK(buf) ((buf)->b_ct_di.di_tv.vval.v_number)
 
+#ifdef FEAT_AUTOCMD
+    varnumber_T	b_last_changedtick; /* b:changedtick when TextChanged or
+				       TextChangedI was last triggered. */
+# ifdef FEAT_INS_EXPAND
+    varnumber_T	b_last_changedtick_pum; /* b:changedtick when TextChangedP was
+					   last triggered. */
+# endif
+#endif
+
     int		b_saving;	/* Set to TRUE if we are in the middle of
 				   saving the buffer. */
 
@@ -3273,6 +3285,22 @@ typedef struct {
 } context_sha256_T;
 
 /*
+ * types for expressions.
+ */
+typedef enum
+{
+    TYPE_UNKNOWN = 0
+    , TYPE_EQUAL	/* == */
+    , TYPE_NEQUAL	/* != */
+    , TYPE_GREATER	/* >  */
+    , TYPE_GEQUAL	/* >= */
+    , TYPE_SMALLER	/* <  */
+    , TYPE_SEQUAL	/* <= */
+    , TYPE_MATCH	/* =~ */
+    , TYPE_NOMATCH	/* !~ */
+} exptype_T;
+
+/*
  * Structure used for reading in json_decode().
  */
 struct js_reader
@@ -3324,6 +3352,7 @@ typedef struct
 
     int		evim_mode;		/* started as "evim" */
     char_u	*use_vimrc;		/* vimrc from -u argument */
+    int		clean;			/* --clean argument */
 
     int		n_commands;		     /* no. of commands from + or -c */
     char_u	*commands[MAX_ARG_CMDS];     /* commands from + or -c arg. */

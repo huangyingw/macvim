@@ -49,6 +49,9 @@ do_ascii(exarg_T *eap UNUSED)
     char	buf1[20];
     char	buf2[20];
     char_u	buf3[7];
+#ifdef FEAT_DIGRAPHS
+    char_u      *dig;
+#endif
 #ifdef FEAT_MBYTE
     int		cc[MAX_MCO];
     int		ci = 0;
@@ -94,7 +97,15 @@ do_ascii(exarg_T *eap UNUSED)
 	else
 #endif
 	    buf2[0] = NUL;
-	vim_snprintf((char *)IObuff, IOSIZE,
+#ifdef FEAT_DIGRAPHS
+	dig = get_digraph_for_char(cval);
+	if (dig != NULL)
+	    vim_snprintf((char *)IObuff, IOSIZE,
+		_("<%s>%s%s  %d,  Hex %02x,  Oct %03o, Digr %s"),
+			      transchar(c), buf1, buf2, cval, cval, cval, dig);
+	else
+#endif
+	    vim_snprintf((char *)IObuff, IOSIZE,
 		_("<%s>%s%s  %d,  Hex %02x,  Octal %03o"),
 				  transchar(c), buf1, buf2, cval, cval, cval);
 #ifdef FEAT_MBYTE
@@ -121,9 +132,19 @@ do_ascii(exarg_T *eap UNUSED)
 		)
 	    IObuff[len++] = ' '; /* draw composing char on top of a space */
 	len += (*mb_char2bytes)(c, IObuff + len);
-	vim_snprintf((char *)IObuff + len, IOSIZE - len,
-			c < 0x10000 ? _("> %d, Hex %04x, Octal %o")
-				    : _("> %d, Hex %08x, Octal %o"), c, c, c);
+#ifdef FEAT_DIGRAPHS
+	dig = get_digraph_for_char(c);
+	if (dig != NULL)
+	    vim_snprintf((char *)IObuff + len, IOSIZE - len,
+			c < 0x10000 ? _("> %d, Hex %04x, Oct %o, Digr %s")
+				    : _("> %d, Hex %08x, Oct %o, Digr %s"),
+					c, c, c, dig);
+	else
+#endif
+	    vim_snprintf((char *)IObuff + len, IOSIZE - len,
+			 c < 0x10000 ? _("> %d, Hex %04x, Octal %o")
+				     : _("> %d, Hex %08x, Octal %o"),
+				     c, c, c);
 	if (ci == MAX_MCO)
 	    break;
 	if (enc_utf8)
@@ -1957,8 +1978,7 @@ write_viminfo(char_u *file, int forceit)
 		    if (!shortname && st_new.st_dev == st_old.st_dev
 						&& st_new.st_ino == st_old.st_ino)
 		    {
-			vim_free(tempname);
-			tempname = NULL;
+			VIM_CLEAR(tempname);
 			shortname = TRUE;
 			break;
 		    }
@@ -3429,6 +3449,14 @@ do_wqall(exarg_T *eap)
 
     FOR_ALL_BUFFERS(buf)
     {
+#ifdef FEAT_TERMINAL
+	if (exiting && term_job_running(buf->b_term))
+	{
+	    no_write_message_nobang(buf);
+	    ++error;
+	}
+	else
+#endif
 	if (bufIsChanged(buf) && !bt_dontwrite(buf))
 	{
 	    /*
@@ -5225,8 +5253,7 @@ do_sub(exarg_T *eap)
 		    lnum += regmatch.startpos[0].lnum;
 		    sub_firstlnum += regmatch.startpos[0].lnum;
 		    nmatch -= regmatch.startpos[0].lnum;
-		    vim_free(sub_firstline);
-		    sub_firstline = NULL;
+		    VIM_CLEAR(sub_firstline);
 		}
 
 		if (sub_firstline == NULL)
@@ -5388,10 +5415,7 @@ do_sub(exarg_T *eap)
 						     sub_firstline + copycol);
 
 				    if (new_line == NULL)
-				    {
-					vim_free(orig_line);
-					orig_line = NULL;
-				    }
+					VIM_CLEAR(orig_line);
 				    else
 				    {
 					/* Position the cursor relative to the
@@ -5820,8 +5844,7 @@ skip:
 	    if (did_sub)
 		++sub_nlines;
 	    vim_free(new_start);	/* for when substitute was cancelled */
-	    vim_free(sub_firstline);	/* free the copy of the original line */
-	    sub_firstline = NULL;
+	    VIM_CLEAR(sub_firstline);	/* free the copy of the original line */
 	}
 
 	line_breakcheck();
@@ -6924,7 +6947,7 @@ fix_help_buffer(void)
 		copy_option_part(&p, NameBuff, MAXPATHL, ",");
 		mustfree = FALSE;
 		rt = vim_getenv((char_u *)"VIMRUNTIME", &mustfree);
-		if (fullpathcmp(rt, NameBuff, FALSE) != FPC_SAME)
+		if (rt != NULL && fullpathcmp(rt, NameBuff, FALSE) != FPC_SAME)
 		{
 		    int		fcount;
 		    char_u	**fnames;
@@ -6975,8 +6998,7 @@ fix_help_buffer(void)
 				    && fnamecmp(e1, fname + 4) != 0)
 				{
 				    /* Not .txt and not .abx, remove it. */
-				    vim_free(fnames[i1]);
-				    fnames[i1] = NULL;
+				    VIM_CLEAR(fnames[i1]);
 				    continue;
 				}
 				if (e1 - f1 != e2 - f2
@@ -6984,11 +7006,8 @@ fix_help_buffer(void)
 				    continue;
 				if (fnamecmp(e1, ".txt") == 0
 				    && fnamecmp(e2, fname + 4) == 0)
-				{
 				    /* use .abx instead of .txt */
-				    vim_free(fnames[i1]);
-				    fnames[i1] = NULL;
-				}
+				    VIM_CLEAR(fnames[i1]);
 			    }
 			}
 #endif
@@ -8345,7 +8364,6 @@ ex_smile(exarg_T *eap UNUSED)
     msg_clr_eos();
 }
 
-#if defined(FEAT_GUI) || defined(FEAT_CLIENTSERVER) || defined(PROTO)
 /*
  * ":drop"
  * Opens the first argument in a window.  When there are two or more arguments
@@ -8425,7 +8443,6 @@ ex_drop(exarg_T *eap)
 	ex_rewind(eap);
     }
 }
-#endif
 
 /*
  * Skip over the pattern argument of ":vimgrep /pat/[g][j]".

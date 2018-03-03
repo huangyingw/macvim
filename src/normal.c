@@ -1482,8 +1482,7 @@ do_pending_operator(cmdarg_T *cap, int old_col, int gui_yank)
 		{
 		    AppendToRedobuffLit(repeat_cmdline, -1);
 		    AppendToRedobuff(NL_STR);
-		    vim_free(repeat_cmdline);
-		    repeat_cmdline = NULL;
+		    VIM_CLEAR(repeat_cmdline);
 		}
 	    }
 	}
@@ -7509,6 +7508,11 @@ v_visop(cmdarg_T *cap)
     static void
 nv_subst(cmdarg_T *cap)
 {
+#ifdef FEAT_TERMINAL
+    /* When showing output of term_dumpdiff() swap the top and botom. */
+    if (term_swap_diff() == OK)
+	return;
+#endif
     if (VIsual_active)	/* "vs" and "vS" are the same as "vc" */
     {
 	if (cap->cmdchar == 'S')
