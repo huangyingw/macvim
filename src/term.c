@@ -143,6 +143,9 @@ static int rbm_status = STATUS_GET;
 
 /* Request cursor style report: */
 static int rcs_status = STATUS_GET;
+
+/* Request windos position report: */
+static int winpos_status = STATUS_GET;
 # endif
 
 /*
@@ -2281,6 +2284,7 @@ add_termcap_entry(char_u *name, int force)
 	    if (termp->bt_string != NULL)	/* found it */
 	    {
 		key = TERMCAP2KEY(name[0], name[1]);
+		++termp;
 		while (termp->bt_entry != (int)KS_NAME)
 		{
 		    if ((int)termp->bt_entry == key)
@@ -2784,9 +2788,9 @@ can_get_termresponse()
 	    && p_ek;
 }
 
-static int winpos_x;
-static int winpos_y;
-static int waiting_for_winpos = FALSE;
+static int winpos_x = -1;
+static int winpos_y = -1;
+static int did_request_winpos = 0;
 
 /*
  * Try getting the Vim window position from the terminal.
@@ -2796,29 +2800,43 @@ static int waiting_for_winpos = FALSE;
 term_get_winpos(int *x, int *y, varnumber_T timeout)
 {
     int count = 0;
+    int prev_winpos_x = winpos_x;
+    int prev_winpos_y = winpos_y;
 
     if (*T_CGP == NUL || !can_get_termresponse())
 	return FAIL;
     winpos_x = -1;
     winpos_y = -1;
-    waiting_for_winpos = TRUE;
+    ++did_request_winpos;
+    winpos_status = STATUS_SENT;
     OUT_STR(T_CGP);
     out_flush();
 
     /* Try reading the result for "timeout" msec. */
-    while (count++ < timeout / 10)
+    while (count++ <= timeout / 10 && !got_int)
     {
 	(void)vpeekc_nomap();
 	if (winpos_x >= 0 && winpos_y >= 0)
 	{
 	    *x = winpos_x;
 	    *y = winpos_y;
-	    waiting_for_winpos = FALSE;
 	    return OK;
 	}
 	ui_delay(10, FALSE);
     }
-    waiting_for_winpos = FALSE;
+    /* Do not reset "did_request_winpos", if we timed out the response might
+     * still come later and we must consume it. */
+
+    winpos_x = prev_winpos_x;
+    winpos_y = prev_winpos_y;
+    if (timeout < 10 && prev_winpos_y >= 0 && prev_winpos_y >= 0)
+    {
+	/* Polling: return previous values if we have them. */
+	*x = winpos_x;
+	*y = winpos_y;
+	return OK;
+    }
+
     return FALSE;
 }
 # endif
@@ -3371,7 +3389,8 @@ settmode(int tmode)
 #endif
 					 || rbg_status == STATUS_SENT
 					 || rbm_status == STATUS_SENT
-					 || rcs_status == STATUS_SENT))
+					 || rcs_status == STATUS_SENT
+					 || winpos_status == STATUS_SENT))
 		    (void)vpeekc_nomap();
 		check_for_codes_from_term();
 	    }
@@ -3445,7 +3464,8 @@ stoptermcap(void)
 # endif
 		    || rbg_status == STATUS_SENT
 		    || rbm_status == STATUS_SENT
-		    || rcs_status == STATUS_SENT)
+		    || rcs_status == STATUS_SENT
+		    || winpos_status == STATUS_SENT)
 	    {
 # ifdef UNIX
 		/* Give the terminal a chance to respond. */
@@ -4474,7 +4494,7 @@ check_termcode(
 	     */
 	    char_u *argp = tp[0] == ESC ? tp + 2 : tp + 1;
 
-	    if ((*T_CRV != NUL || *T_U7 != NUL || waiting_for_winpos)
+	    if ((*T_CRV != NUL || *T_U7 != NUL || did_request_winpos)
 			&& ((tp[0] == ESC && len >= 3 && tp[1] == '[')
 			    || (tp[0] == CSI && len >= 2))
 			&& (VIM_ISDIGIT(*argp) || *argp == '>' || *argp == '?'))
@@ -4736,7 +4756,7 @@ check_termcode(
 		 * Check for a window position response from the terminal:
 		 *       {lead}3;{x}:{y}t
 		 */
-		else if (waiting_for_winpos
+		else if (did_request_winpos
 			    && ((len >= 4 && tp[0] == ESC && tp[1] == '[')
 				|| (len >= 3 && tp[0] == CSI))
 			    && tp[(j = 1 + (tp[0] == ESC))] == '3'
@@ -4758,6 +4778,9 @@ check_termcode(
 			    key_name[0] = (int)KS_EXTRA;
 			    key_name[1] = (int)KE_IGNORE;
 			    slen = i + 1;
+
+			    if (--did_request_winpos <= 0)
+				winpos_status = STATUS_GOT;
 			}
 		    }
 		    if (i == len)

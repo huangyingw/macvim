@@ -1164,6 +1164,18 @@ mch_setmouse(int on)
     SetConsoleMode(g_hConIn, cmodein);
 }
 
+
+#if defined(FEAT_BEVAL_TERM) || defined(PROTO)
+/*
+ * Called when 'balloonevalterm' changed.
+ */
+    void
+mch_bevalterm_changed(void)
+{
+    mch_setmouse(g_fMouseActive);
+}
+#endif
+
 /*
  * Decode a MOUSE_EVENT.  If it's a valid event, return MOUSE_LEFT,
  * MOUSE_MIDDLE, or MOUSE_RIGHT for a click; MOUSE_DRAG for a mouse
@@ -1243,7 +1255,7 @@ decode_mouse_event(
 
     if (pmer->dwEventFlags == MOUSE_MOVED)
     {
-	/* ignore MOUSE_MOVED events if (x, y) hasn't changed.	(We get these
+	/* Ignore MOUSE_MOVED events if (x, y) hasn't changed.	(We get these
 	 * events even when the mouse moves only within a char cell.) */
 	if (s_xOldMouse == g_xMouse && s_yOldMouse == g_yMouse)
 	    return FALSE;
@@ -1252,11 +1264,20 @@ decode_mouse_event(
     /* If no buttons are pressed... */
     if ((pmer->dwButtonState & ((1 << cButtons) - 1)) == 0)
     {
+	nButton = MOUSE_RELEASE;
+
 	/* If the last thing returned was MOUSE_RELEASE, ignore this */
 	if (s_fReleased)
-	    return FALSE;
+	{
+#ifdef FEAT_BEVAL_TERM
+	    /* do return mouse move events when we want them */
+	    if (p_bevalterm)
+		nButton = MOUSE_DRAG;
+	    else
+#endif
+		return FALSE;
+	}
 
-	nButton = MOUSE_RELEASE;
 	s_fReleased = TRUE;
     }
     else    /* one or more buttons pressed */
@@ -7376,10 +7397,15 @@ fix_arg_enc(void)
 	/* Now expand wildcards in the arguments. */
 	/* Temporarily add '(' and ')' to 'isfname'.  These are valid
 	 * filename characters but are excluded from 'isfname' to make
-	 * "gf" work on a file name in parenthesis (e.g.: see vim.h). */
+	 * "gf" work on a file name in parenthesis (e.g.: see vim.h).
+	 * Also, unset wildignore to not be influenced by this option.
+	 * The arguments specified in command-line should be kept even if
+	 * encoding options were changed. */
 	do_cmdline_cmd((char_u *)":let SaVe_ISF = &isf|set isf+=(,)");
+	do_cmdline_cmd((char_u *)":let SaVe_WIG = &wig|set wig=");
 	alist_expand(fnum_list, used_alist_count);
 	do_cmdline_cmd((char_u *)":let &isf = SaVe_ISF|unlet SaVe_ISF");
+	do_cmdline_cmd((char_u *)":let &wig = SaVe_WIG|unlet SaVe_WIG");
     }
 
     /* If wildcard expansion failed, we are editing the first file of the
