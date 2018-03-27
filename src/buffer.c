@@ -291,6 +291,13 @@ open_buffer(
 	unchanged(curbuf, FALSE);
     save_file_ff(curbuf);		/* keep this fileformat */
 
+    /* Set last_changedtick to avoid triggering a TextChanged autocommand right
+     * after it was added. */
+    curbuf->b_last_changedtick = CHANGEDTICK(curbuf);
+#ifdef FEAT_INS_EXPAND
+    curbuf->b_last_changedtick_pum = CHANGEDTICK(curbuf);
+#endif
+
     /* require "!" to overwrite the file, because it wasn't read completely */
 #ifdef FEAT_EVAL
     if (aborting())
@@ -945,7 +952,7 @@ clear_wininfo(buf_T *buf)
     }
 }
 
-#if defined(FEAT_LISTCMDS) || defined(PROTO)
+#if defined(FEAT_LISTCMDS) || defined(FEAT_TERMINAL) || defined(PROTO)
 /*
  * Go to another buffer.  Handles the result of the ATTENTION dialog.
  */
