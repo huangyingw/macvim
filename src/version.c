@@ -337,11 +337,7 @@ static char *(features[]) =
 #else
 	"-lispindent",
 #endif
-#ifdef FEAT_LISTCMDS
 	"+listcmds",
-#else
-	"-listcmds",
-#endif
 #ifdef FEAT_LOCALMAP
 	"+localmap",
 #else
@@ -781,6 +777,64 @@ static char *(features[]) =
 
 static int included_patches[] =
 {   /* Add new patch number below this line */
+/**/
+    1655,
+/**/
+    1654,
+/**/
+    1653,
+/**/
+    1652,
+/**/
+    1651,
+/**/
+    1650,
+/**/
+    1649,
+/**/
+    1648,
+/**/
+    1647,
+/**/
+    1646,
+/**/
+    1645,
+/**/
+    1644,
+/**/
+    1643,
+/**/
+    1642,
+/**/
+    1641,
+/**/
+    1640,
+/**/
+    1639,
+/**/
+    1638,
+/**/
+    1637,
+/**/
+    1636,
+/**/
+    1635,
+/**/
+    1634,
+/**/
+    1633,
+/**/
+    1632,
+/**/
+    1631,
+/**/
+    1630,
+/**/
+    1629,
+/**/
+    1628,
+/**/
+    1627,
 /**/
     1626,
 /**/
