@@ -856,6 +856,9 @@ static struct fst
     {"term_dumpload",	1, 2, f_term_dumpload},
     {"term_dumpwrite",	2, 3, f_term_dumpwrite},
     {"term_getaltscreen", 1, 1, f_term_getaltscreen},
+# if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
+    {"term_getansicolors", 1, 1, f_term_getansicolors},
+# endif
     {"term_getattr",	2, 2, f_term_getattr},
     {"term_getcursor",	1, 1, f_term_getcursor},
     {"term_getjob",	1, 1, f_term_getjob},
@@ -868,8 +871,12 @@ static struct fst
     {"term_list",	0, 0, f_term_list},
     {"term_scrape",	2, 2, f_term_scrape},
     {"term_sendkeys",	2, 2, f_term_sendkeys},
+# if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
+    {"term_setansicolors", 2, 2, f_term_setansicolors},
+# endif
     {"term_setkill",	2, 2, f_term_setkill},
     {"term_setrestore",	2, 2, f_term_setrestore},
+    {"term_setsize",	3, 3, f_term_setsize},
     {"term_start",	1, 2, f_term_start},
     {"term_wait",	1, 2, f_term_wait},
 #endif
@@ -1993,7 +2000,7 @@ f_ch_log(typval_T *argvars, typval_T *rettv UNUSED)
     if (argvars[1].v_type != VAR_UNKNOWN)
 	channel = get_channel_arg(&argvars[1], FALSE, FALSE, 0);
 
-    ch_log(channel, (char *)msg);
+    ch_log(channel, "%s", msg);
 }
 
 /*
@@ -8070,22 +8077,32 @@ f_mkdir(typval_T *argvars, typval_T *rettv)
 
     dir = get_tv_string_buf(&argvars[0], buf);
     if (*dir == NUL)
-	rettv->vval.v_number = FAIL;
-    else
-    {
-	if (*gettail(dir) == NUL)
-	    /* remove trailing slashes */
-	    *gettail_sep(dir) = NUL;
+	return;
 
-	if (argvars[1].v_type != VAR_UNKNOWN)
+    if (*gettail(dir) == NUL)
+	/* remove trailing slashes */
+	*gettail_sep(dir) = NUL;
+
+    if (argvars[1].v_type != VAR_UNKNOWN)
+    {
+	if (argvars[2].v_type != VAR_UNKNOWN)
 	{
-	    if (argvars[2].v_type != VAR_UNKNOWN)
-		prot = (int)get_tv_number_chk(&argvars[2], NULL);
-	    if (prot != -1 && STRCMP(get_tv_string(&argvars[1]), "p") == 0)
-		mkdir_recurse(dir, prot);
+	    prot = (int)get_tv_number_chk(&argvars[2], NULL);
+	    if (prot == -1)
+		return;
 	}
-	rettv->vval.v_number = prot == -1 ? FAIL : vim_mkdir_emsg(dir, prot);
+	if (STRCMP(get_tv_string(&argvars[1]), "p") == 0)
+	{
+	    if (mch_isdir(dir))
+	    {
+		/* With the "p" flag it's OK if the dir already exists. */
+		rettv->vval.v_number = OK;
+		return;
+	    }
+	    mkdir_recurse(dir, prot);
+	}
     }
+    rettv->vval.v_number = vim_mkdir_emsg(dir, prot);
 }
 #endif
 
@@ -12954,7 +12971,7 @@ get_callback(typval_T *arg, partial_T **pp)
 }
 
 /*
- * Unref/free "callback" and "partial" retured by get_callback().
+ * Unref/free "callback" and "partial" returned by get_callback().
  */
     void
 free_callback(char_u *callback, partial_T *partial)

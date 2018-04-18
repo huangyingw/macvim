@@ -2423,6 +2423,7 @@ term_dumpload({filename} [, {options}])
 term_dumpwrite({buf}, {filename} [, {options}])
 				none	dump terminal window contents
 term_getaltscreen({buf})	Number	get the alternate screen flag
+term_getansicolors({buf})	List	get ANSI palette in GUI color mode
 term_getattr({attr}, {what})	Number	get the value of attribute {what}
 term_getcursor({buf})		List	get the cursor position of a terminal
 term_getjob({buf})		Job	get the job associated with a terminal
@@ -2435,6 +2436,8 @@ term_gettty({buf}, [{input}])	String	get the tty name of a terminal
 term_list()			List	get the list of terminal buffers
 term_scrape({buf}, {row})	List	get row of a terminal screen
 term_sendkeys({buf}, {keys})	none	send keystrokes to a terminal
+term_setansicolors({buf}, {colors})
+				none	set ANSI palette in GUI color mode
 term_setkill({buf}, {how}) 	none	set signal to stop job in terminal
 term_setrestore({buf}, {command}) none	set command to restore terminal
 term_start({cmd}, {options})	Job	open a terminal window and run a job
@@ -6135,6 +6138,8 @@ mkdir({name} [, {path} [, {prot}]])
 		Example: >
 			:call mkdir($HOME . "/tmp/foo/bar", "p", 0700)
 <		This function is not available in the |sandbox|.
+		There is no error if the directory already exists and the "p"
+		flag is passed (since patch 8.0.1708).
 		Not available on all systems.  To check use: >
 			:if exists("*mkdir")
 <
@@ -8248,6 +8253,18 @@ term_getaltscreen({buf})				*term_getaltscreen()*
 		{buf} is used as with |term_getsize()|.
 		{only available when compiled with the |+terminal| feature}
 
+term_getansicolors({buf})				*term_getansicolors()*
+		Get the ANSI color palette in use by terminal {buf}.
+		Returns a List of length 16 where each element is a String
+		representing a color in hexadecimal "#rrggbb" format.
+		Also see |term_setansicolors()| and |g:terminal_ansi_colors|.
+		If neither was used returns the default colors.
+
+		{buf} is used as with |term_getsize()|.  If the buffer does not
+		exist or is not a terminal window, an empty list is returned.
+		{only available when compiled with the |+terminal| feature and
+		with GUI enabled and/or the |+termguicolors| feature}
+
 term_getattr({attr}, {what})				*term_getattr()*
 		Given {attr}, a value returned by term_scrape() in the "attr"
 		item, return whether {what} is on.  {what} can be one of:
@@ -8379,6 +8396,37 @@ term_sendkeys({buf}, {keys})				*term_sendkeys()*
 		means the character CTRL-X.
 		{only available when compiled with the |+terminal| feature}
 
+term_setansicolors({buf}, {colors})			*term_setansicolors()*
+		Set the ANSI color palette used by terminal {buf}.
+		{colors} must be a List of 16 valid color names or hexadecimal
+		color codes, like those accepted by |highlight-guifg|.
+		Also see |term_getansicolors()| and |g:terminal_ansi_colors|.
+
+		The colors normally are:
+			0    black
+			1    dark red
+			2    dark green
+			3    brown
+			4    dark blue
+			5    dark magenta
+			6    dark cyan
+			7    light grey
+			8    dark grey
+			9    red
+			10   green
+			11   yellow
+			12   blue
+			13   magenta
+			14   cyan
+			15   white
+
+		These colors are used in the GUI and in the terminal when
+		'termguicolors' is set.  When not using GUI colors (GUI mode
+		or |termguicolors|), the terminal window always uses the 16
+		ANSI colors of the underlying terminal.
+		{only available when compiled with the |+terminal| feature and
+		with GUI enabled and/or the |+termguicolors| feature}
+
 term_setkill({buf}, {how})				*term_setkill()*
 		When exiting Vim or trying to close the terminal window in
 		another way, {how} defines whether the job in the terminal can
@@ -8401,8 +8449,15 @@ term_setrestore({buf}, {command})			*term_setrestore()*
 		Use "NONE" to not restore this window.
 		{only available when compiled with the |+terminal| feature}
 
-term_setsize({buf}, {expr})				*term_setsize()*
-		Not implemented yet.
+term_setsize({buf}, {rows}, {cols})			*term_setsize()*
+		Set the size of terminal {buf}. The size of the window
+		containing the terminal will also be adjusted, if possible.
+		If {rows} or {cols} is zero or negative, that dimension is not
+		changed.
+
+		{buf} must be the buffer number of a terminal window.  Use an
+		empty string for the current buffer.  If the buffer does not
+		exist or is not a terminal window, an error is given.
 		{only available when compiled with the |+terminal| feature}
 
 term_start({cmd}, {options})				*term_start()*
@@ -8463,6 +8518,9 @@ term_start({cmd}, {options})				*term_start()*
 				     CTRL-D is used on MS-Windows. For Python
 				     use CTRL-Z or "exit()". For a shell use
 				     "exit".  A CR is always added.
+		   "ansi_colors"     A list of 16 color names or hex codes
+				     defining the ANSI palette used in GUI
+				     color modes.  See |g:terminal_ansi_colors|.
 
 		{only available when compiled with the |+terminal| feature}
 

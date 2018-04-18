@@ -158,6 +158,7 @@ ch_log_lead(const char *what, channel_T *ch)
 
 static int did_log_msg = TRUE;
 
+#ifndef PROTO  /* prototype is in vim.h */
     void
 ch_log(channel_T *ch, const char *fmt, ...)
 {
@@ -174,6 +175,14 @@ ch_log(channel_T *ch, const char *fmt, ...)
 	did_log_msg = TRUE;
     }
 }
+#endif
+
+    static void
+ch_error(channel_T *ch, const char *fmt, ...)
+#ifdef USE_PRINTF_FORMAT_ATTRIBUTE
+    __attribute__((format(printf, 2, 3)))
+#endif
+    ;
 
     static void
 ch_error(channel_T *ch, const char *fmt, ...)
@@ -682,9 +691,9 @@ channel_open(
     {
 	char		*p;
 
-	/* When using host->h_addr directly ubsan warns for it to not be
-	 * aligned.  First copy the pointer to aviod that. */
-	memcpy(&p, &host->h_addr, sizeof(p));
+	/* When using host->h_addr_list[0] directly ubsan warns for it to not
+	 * be aligned.  First copy the pointer to avoid that. */
+	memcpy(&p, &host->h_addr_list[0], sizeof(p));
 	memcpy((char *)&server.sin_addr, p, host->h_length);
     }
 
@@ -1468,8 +1477,8 @@ channel_write_in(channel_T *channel)
 	ch_close_part(channel, PART_IN);
     }
     else
-	ch_log(channel, "Still %d more lines to write",
-					  buf->b_ml.ml_line_count - lnum + 1);
+	ch_log(channel, "Still %ld more lines to write",
+				   (long)(buf->b_ml.ml_line_count - lnum + 1));
 }
 
 /*
@@ -1562,8 +1571,8 @@ channel_write_new_lines(buf_T *buf)
 	    else if (written > 1)
 		ch_log(channel, "written %d lines to channel", written);
 	    if (lnum < buf->b_ml.ml_line_count)
-		ch_log(channel, "Still %d more lines to write",
-					      buf->b_ml.ml_line_count - lnum);
+		ch_log(channel, "Still %ld more lines to write",
+				       (long)(buf->b_ml.ml_line_count - lnum));
 
 	    in_part->ch_buf_bot = lnum;
 	}
@@ -2107,7 +2116,8 @@ channel_get_json(
 	{
 	    *rettv = item->jq_value;
 	    if (tv->v_type == VAR_NUMBER)
-		ch_log(channel, "Getting JSON message %d", tv->vval.v_number);
+		ch_log(channel, "Getting JSON message %ld",
+						      (long)tv->vval.v_number);
 	    remove_json_node(head, item);
 	    return OK;
 	}
@@ -4192,8 +4202,9 @@ channel_select_check(int ret_in, void *rfds_in, void *wfds_in)
 	if (ret > 0 && in_part->ch_fd != INVALID_FD
 					    && FD_ISSET(in_part->ch_fd, wfds))
 	{
-	    channel_write_input(channel);
+	    /* Clear the flag first, ch_fd may change in channel_write_input(). */
 	    FD_CLR(in_part->ch_fd, wfds);
+	    channel_write_input(channel);
 	    --ret;
 	}
     }
@@ -4833,14 +4844,64 @@ get_job_options(typval_T *tv, jobopt_T *opt, int supported, int supported2)
 		opt->jo_set2 |= JO2_TERM_KILL;
 		opt->jo_term_kill = get_tv_string_chk(item);
 	    }
+# if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
+	    else if (STRCMP(hi->hi_key, "ansi_colors") == 0)
+	    {
+		int 		n = 0;
+		listitem_T	*li;
+		long_u		rgb[16];
+
+		if (!(supported2 & JO2_ANSI_COLORS))
+		    break;
+
+		if (item == NULL || item->v_type != VAR_LIST
+			|| item->vval.v_list == NULL)
+		{
+		    EMSG2(_(e_invargval), "ansi_colors");
+		    return FAIL;
+		}
+
+		li = item->vval.v_list->lv_first;
+		for (; li != NULL && n < 16; li = li->li_next, n++)
+		{
+		    char_u	*color_name;
+		    guicolor_T 	guicolor;
+
+		    color_name = get_tv_string_chk(&li->li_tv);
+		    if (color_name == NULL)
+			return FAIL;
+
+		    guicolor = GUI_GET_COLOR(color_name);
+		    if (guicolor == INVALCOLOR)
+			return FAIL;
+
+		    rgb[n] = GUI_MCH_GET_RGB(guicolor);
+		}
+
+		if (n != 16 || li != NULL)
+		{
+		    EMSG2(_(e_invargval), "ansi_colors");
+		    return FAIL;
+		}
+
+		opt->jo_set2 |= JO2_ANSI_COLORS;
+		memcpy(opt->jo_ansi_colors, rgb, sizeof(rgb));
+	    }
+# endif
 #endif
 	    else if (STRCMP(hi->hi_key, "env") == 0)
 	    {
 		if (!(supported2 & JO2_ENV))
 		    break;
+		if (item->v_type != VAR_DICT)
+		{
+		    EMSG2(_(e_invargval), "env");
+		    return FAIL;
+		}
 		opt->jo_set2 |= JO2_ENV;
 		opt->jo_env = item->vval.v_dict;
-		++item->vval.v_dict->dv_refcount;
+		if (opt->jo_env != NULL)
+		    ++opt->jo_env->dv_refcount;
 	    }
 	    else if (STRCMP(hi->hi_key, "cwd") == 0)
 	    {

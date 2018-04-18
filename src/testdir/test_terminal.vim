@@ -271,6 +271,27 @@ func Test_terminal_scroll()
   call delete('Xtext')
 endfunc
 
+func Test_terminal_scrollback()
+  let buf = Run_shell_in_terminal({})
+  set terminalscroll=100
+  call writefile(range(150), 'Xtext')
+  if has('win32')
+    call term_sendkeys(buf, "type Xtext\<CR>")
+  else
+    call term_sendkeys(buf, "cat Xtext\<CR>")
+  endif
+  let rows = term_getsize(buf)[0]
+  " On MS-Windows there is an empty line, check both last line and above it.
+  call WaitFor({-> term_getline(buf, rows - 1) . term_getline(buf, rows - 2) =~ '149'})
+  let lines = line('$')
+  call assert_inrange(91, 100, lines)
+
+  call Stop_shell_in_terminal(buf)
+  call term_wait(buf)
+  exe buf . 'bwipe'
+  set terminalscroll&
+endfunc
+
 func Test_terminal_size()
   let cmd = Get_cat_123_cmd()
 
@@ -286,9 +307,19 @@ func Test_terminal_size()
 
   vsplit
   exe 'terminal ++rows=5 ++cols=33 ' . cmd
-  let size = term_getsize('')
+  call assert_equal([5, 33], term_getsize(''))
+
+  call term_setsize('', 6, 0)
+  call assert_equal([6, 33], term_getsize(''))
+
+  call term_setsize('', 0, 35)
+  call assert_equal([6, 35], term_getsize(''))
+
+  call term_setsize('', 7, 30)
+  call assert_equal([7, 30], term_getsize(''))
+
   bwipe!
-  call assert_equal([5, 33], size)
+  call assert_fails("call term_setsize('', 7, 30)", "E955:")
 
   call term_start(cmd, {'term_rows': 6, 'term_cols': 36})
   let size = term_getsize('')
@@ -1059,17 +1090,14 @@ func Test_terminal_dumpdiff_options()
   set laststatus&
 endfunc
 
-func Test_terminal_api_drop_newwin()
-  if !CanRunVimInTerminal()
-    return
-  endif
+func Api_drop_common(options)
   call assert_equal(1, winnr('$'))
 
   " Use the title termcap entries to output the escape sequence.
   call writefile([
 	\ 'set title',
 	\ 'exe "set t_ts=\<Esc>]51; t_fs=\x07"',
-	\ 'let &titlestring = ''["drop","Xtextfile"]''',
+	\ 'let &titlestring = ''["drop","Xtextfile"' . a:options . ']''',
 	\ 'redraw',
 	\ "set t_ts=",
 	\ ], 'Xscript')
@@ -1077,6 +1105,116 @@ func Test_terminal_api_drop_newwin()
   call WaitFor({-> bufnr('Xtextfile') > 0})
   call assert_equal('Xtextfile', expand('%:t'))
   call assert_true(winnr('$') >= 3)
+  return buf
+endfunc
+
+func Test_terminal_api_drop_newwin()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common('')
+  call assert_equal(0, &bin)
+  call assert_equal('', &fenc)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+endfunc
+
+func Test_terminal_api_drop_newwin_bin()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common(',{"bin":1}')
+  call assert_equal(1, &bin)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+endfunc
+
+func Test_terminal_api_drop_newwin_binary()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common(',{"binary":1}')
+  call assert_equal(1, &bin)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+endfunc
+
+func Test_terminal_api_drop_newwin_nobin()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  set binary
+  let buf = Api_drop_common(',{"nobin":1}')
+  call assert_equal(0, &bin)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+  set nobinary
+endfunc
+
+func Test_terminal_api_drop_newwin_nobinary()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  set binary
+  let buf = Api_drop_common(',{"nobinary":1}')
+  call assert_equal(0, &bin)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+  set nobinary
+endfunc
+
+func Test_terminal_api_drop_newwin_ff()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common(',{"ff":"dos"}')
+  call assert_equal("dos", &ff)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+endfunc
+
+func Test_terminal_api_drop_newwin_fileformat()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common(',{"fileformat":"dos"}')
+  call assert_equal("dos", &ff)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+endfunc
+
+func Test_terminal_api_drop_newwin_enc()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common(',{"enc":"utf-16"}')
+  call assert_equal("utf-16", &fenc)
+
+  call StopVimInTerminal(buf)
+  call delete('Xscript')
+  bwipe Xtextfile
+endfunc
+
+func Test_terminal_api_drop_newwin_encoding()
+  if !CanRunVimInTerminal()
+    return
+  endif
+  let buf = Api_drop_common(',{"encoding":"utf-16"}')
+  call assert_equal("utf-16", &fenc)
 
   call StopVimInTerminal(buf)
   call delete('Xscript')
@@ -1157,4 +1295,74 @@ func Test_terminal_api_call_fails()
   call delete('Xscript')
   call ch_logfile('', '')
   call delete('Xlog')
+endfunc
+
+func Test_terminal_ansicolors_default()
+  let colors = [
+	\ '#000000', '#e00000',
+	\ '#00e000', '#e0e000',
+	\ '#0000e0', '#e000e0',
+	\ '#00e0e0', '#e0e0e0',
+	\ '#808080', '#ff4040',
+	\ '#40ff40', '#ffff40',
+	\ '#4040ff', '#ff40ff',
+	\ '#40ffff', '#ffffff',
+	\]
+
+  let buf = Run_shell_in_terminal({})
+  call assert_equal(colors, term_getansicolors(buf))
+  call Stop_shell_in_terminal(buf)
+  call term_wait(buf)
+
+  exe buf . 'bwipe'
+endfunc
+
+let s:test_colors = [
+	\ '#616e64', '#0d0a79',
+	\ '#6d610d', '#0a7373',
+	\ '#690d0a', '#6d696e',
+	\ '#0d0a6f', '#616e0d',
+	\ '#0a6479', '#6d0d0a',
+	\ '#617373', '#0d0a69',
+	\ '#6d690d', '#0a6e6f',
+	\ '#610d0a', '#6e6479',
+	\]
+
+func Test_terminal_ansicolors_global()
+  let g:terminal_ansi_colors = reverse(copy(s:test_colors))
+  let buf = Run_shell_in_terminal({})
+  call assert_equal(g:terminal_ansi_colors, term_getansicolors(buf))
+  call Stop_shell_in_terminal(buf)
+  call term_wait(buf)
+
+  exe buf . 'bwipe'
+  unlet g:terminal_ansi_colors
+endfunc
+
+func Test_terminal_ansicolors_func()
+  let g:terminal_ansi_colors = reverse(copy(s:test_colors))
+  let buf = Run_shell_in_terminal({'ansi_colors': s:test_colors})
+  call assert_equal(s:test_colors, term_getansicolors(buf))
+
+  call term_setansicolors(buf, g:terminal_ansi_colors)
+  call assert_equal(g:terminal_ansi_colors, term_getansicolors(buf))
+
+  let colors = [
+	\ 'ivory', 'AliceBlue',
+	\ 'grey67', 'dark goldenrod',
+	\ 'SteelBlue3', 'PaleVioletRed4',
+	\ 'MediumPurple2', 'yellow2',
+	\ 'RosyBrown3', 'OrangeRed2',
+	\ 'white smoke', 'navy blue',
+	\ 'grey47', 'gray97',
+	\ 'MistyRose2', 'DodgerBlue4',
+	\]
+  call term_setansicolors(buf, colors)
+
+  let colors[4] = 'Invalid'
+  call assert_fails('call term_setansicolors(buf, colors)', 'E474:')
+
+  call Stop_shell_in_terminal(buf)
+  call term_wait(buf)
+  exe buf . 'bwipe'
 endfunc

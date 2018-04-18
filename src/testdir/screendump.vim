@@ -59,7 +59,8 @@ func RunVimInTerminal(arguments, options)
   let buf = term_start(cmd, {'curwin': 1, 'term_rows': rows, 'term_cols': cols})
   call assert_equal([rows, cols], term_getsize(buf))
 
-  " Wait for the ruler (in the status line) to be shown.
+  " Wait for "All" of the ruler in the status line to be shown.
+  " This can be quite slow (e.g. when using valgrind).
   call WaitFor({-> len(term_getline(buf, rows)) >= cols - 1})
 
   return buf
