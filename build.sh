@@ -5,7 +5,9 @@ cd "$SCRIPTPATH"
 
 cd src/
 
-xcode-select --install
+xcode-select --install # Install Command Line Tools if you haven't already.
+sudo xcode-select --switch /Library/Developer/CommandLineTools # Enable command line tools
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 brew reinstall python --framework
 ./configure \
     --enable-cscope \
