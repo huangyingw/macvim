@@ -306,6 +306,9 @@ func Test_paste_in_cmdline()
   call feedkeys("ft:aaa \<C-R>\<C-F> bbb\<C-B>\"\<CR>", 'tx')
   call assert_equal('"aaa /tmp/some bbb', @:)
 
+  call feedkeys(":aaa \<C-R>\<C-L> bbb\<C-B>\"\<CR>", 'tx')
+  call assert_equal('"aaa '.getline(1).' bbb', @:)
+
   set incsearch
   call feedkeys("fy:aaa veryl\<C-R>\<C-W> bbb\<C-B>\"\<CR>", 'tx')
   call assert_equal('"aaa verylongword bbb', @:)
@@ -315,6 +318,17 @@ func Test_paste_in_cmdline()
 
   call feedkeys(":\<C-\>etoupper(getline(1))\<CR>\<C-B>\"\<CR>", 'tx')
   call assert_equal('"ASDF.X /TMP/SOME VERYLONGWORD A;B-C*D ', @:)
+  bwipe!
+
+  " Error while typing a command used to cause that it was not executed
+  " in the end.
+  new
+  try
+    call feedkeys(":file \<C-R>%Xtestfile\<CR>", 'tx')
+  catch /^Vim\%((\a\+)\)\=:E32/
+    " ignore error E32
+  endtry
+  call assert_equal("Xtestfile", bufname("%"))
   bwipe!
 endfunc
 
