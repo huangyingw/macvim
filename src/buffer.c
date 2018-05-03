@@ -417,6 +417,8 @@ buf_hashtab_remove(buf_T *buf)
 	hash_remove(&buf_hashtab, hi);
 }
 
+static char *e_buflocked = N_("E937: Attempt to delete a buffer that is in use");
+
 /*
  * Close the link to a buffer.
  * "action" is used when there is no longer a window for the buffer.
@@ -476,8 +478,15 @@ close_buffer(
 	if (term_job_running(buf->b_term))
 	{
 	    if (wipe_buf || unload_buf)
+	    {
+		if (buf->b_locked)
+		{
+		    EMSG(_(e_buflocked));
+		    return;
+		}
 		/* Wiping out or unloading a terminal buffer kills the job. */
 		free_terminal(buf);
+	    }
 	    else
 	    {
 		/* The job keeps running, hide the buffer. */
@@ -499,7 +508,7 @@ close_buffer(
      * halfway a command that relies on it). Unloading is allowed. */
     if (buf->b_locked > 0 && (del_buf || wipe_buf))
     {
-	EMSG(_("E937: Attempt to delete a buffer that is in use"));
+	EMSG(_(e_buflocked));
 	return;
     }
 
@@ -1360,6 +1369,12 @@ do_buffer(
 	int	forward;
 	bufref_T bufref;
 
+	if (buf->b_locked)
+	{
+	    EMSG(_(e_buflocked));
+	    return FAIL;
+	}
+
 	set_bufref(&bufref, buf);
 
 	/* When unloading or deleting a buffer that's already unloaded and
@@ -1768,7 +1783,7 @@ enter_buffer(buf_T *buf)
 #endif
 
     /* Change directories when the 'acd' option is set. */
-    DO_AUTOCHDIR
+    DO_AUTOCHDIR;
 
 #ifdef FEAT_KEYMAP
     if (curbuf->b_kmap_state & KEYMAP_INIT)
@@ -1829,6 +1844,20 @@ no_write_message_nobang(buf_T *buf UNUSED)
  */
 
 static int  top_file_num = 1;		/* highest file number */
+
+/*
+ * Return TRUE if the current buffer is empty, unnamed, unmodified and used in
+ * only one window.  That means it can be re-used.
+ */
+    int
+curbuf_reusable(void)
+{
+    return (curbuf != NULL
+	&& curbuf->b_ffname == NULL
+	&& curbuf->b_nwindows <= 1
+	&& (curbuf->b_ml.ml_mfp == NULL || BUFEMPTY())
+	&& !curbufIsChanged());
+}
 
 /*
  * Add a file name to the buffer list.  Return a pointer to the buffer.
@@ -1910,11 +1939,7 @@ buflist_new(
      * buffer.)
      */
     buf = NULL;
-    if ((flags & BLN_CURBUF)
-	    && curbuf != NULL
-	    && curbuf->b_ffname == NULL
-	    && curbuf->b_nwindows <= 1
-	    && (curbuf->b_ml.ml_mfp == NULL || BUFEMPTY()))
+    if ((flags & BLN_CURBUF) && curbuf_reusable())
     {
 	buf = curbuf;
 	/* It's like this buffer is deleted.  Watch out for autocommands that
