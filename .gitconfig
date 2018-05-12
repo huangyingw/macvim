@@ -28,3 +28,5 @@
 [branch "python3/dev.fix"]
     remote = origin
     merge = refs/heads/python3/dev.fix
+[vrun]
+    silent = false
