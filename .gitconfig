@@ -22,9 +22,8 @@
     ignore = src/window.c
 [commit]
     message = n
-[branch "dev.fix"]
+[branch "dev"]
     remote = origin
-    merge = refs/heads/dev.fix
-[branch "python3/dev.fix"]
-    remote = origin
-    merge = refs/heads/python3/dev.fix
+    merge = refs/heads/dev
+[vrun]
+    silent = false
