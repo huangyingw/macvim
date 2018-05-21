@@ -36,27 +36,6 @@
  * that buffer, attributes come from the scrollback buffer tl_scrollback.
  * When the buffer is changed it is turned into a normal buffer, the attributes
  * in tl_scrollback are no longer used.
- *
- * TODO:
- * - Win32: Termdebug doesn't work, because gdb does not support mi2.  This
- *   plugin: https://github.com/cpiger/NeoDebug  runs gdb as a job, redirecting
- *   input and output.  Command I/O is in gdb window.
- * - Win32: Redirecting input does not work, half of Test_terminal_redir_file()
- *   is disabled.
- * - Win32: Redirecting output works but includes escape sequences.
- * - Win32: Make terminal used for :!cmd in the GUI work better.  Allow for
- *   redirection.
- * - When the job only outputs lines, we could handle resizing the terminal
- *   better: store lines separated by line breaks, instead of screen lines,
- *   then when the window is resized redraw those lines.
- * - Redrawing is slow with Athena and Motif. (Ramel Eshed)
- * - For the GUI fill termios with default values, perhaps like pangoterm:
- *   http://bazaar.launchpad.net/~leonerd/pangoterm/trunk/view/head:/main.c#L134
- * - When 'encoding' is not utf-8, or the job is using another encoding, setup
- *   conversions.
- * - Termdebug does not work when Vim build with mzscheme: gdb hangs just after
- *   "run".  Everything else works, including communication channel.  Not
- *   initializing mzscheme avoid the problem, thus it's not some #ifdef.
  */
 
 #include "vim.h"
@@ -980,6 +959,11 @@ write_to_term(buf_T *buffer, char_u *msg, channel_T *channel)
 	     * already */
 	    if (buffer == curbuf && curbuf->b_term != NULL)
 		update_cursor(curbuf->b_term, TRUE);
+#ifdef FEAT_GUI_MACVIM
+            /* Force a flush now for better experience of interactive shell. */
+	    if (gui.in_use)
+		gui_macvim_force_flush();
+#endif
 	}
 	else
 	    redraw_after_callback(TRUE);
@@ -2727,6 +2711,7 @@ handle_pushline(int cols, const VTermScreenCell *cells, void *user)
 	mch_memmove(term->tl_scrollback.ga_data,
 	    (sb_line_T *)term->tl_scrollback.ga_data + todo,
 	    sizeof(sb_line_T) * term->tl_scrollback.ga_len);
+	term->tl_scrollback_scrolled -= todo;
     }
 
     if (ga_grow(&term->tl_scrollback, 1) == OK)
